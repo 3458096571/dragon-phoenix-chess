@@ -1,7 +1,7 @@
 import {
   type PlayerColor,
   DRAGON_NODES, DRAGON_EDGES, DRAGON_LINES, DRAGON_ADJ,
-  PHOENIX_NODES, PHOENIX_EDGES, PHOENIX_LINES, PHOENIX_ADJ,
+  PHOENIX_NODES, PHOENIX_EDGES, PHOENIX_DRAGON_LINES, PHOENIX_LINES, PHOENIX_ADJ,
 } from './board-data';
 
 export type GameMode = 'dragon' | 'phoenix';
@@ -39,7 +39,7 @@ export class DragonPhoenixGame {
     const isDragon = this.mode === 'dragon';
     this.nodes = isDragon ? [...DRAGON_NODES] : [...PHOENIX_NODES];
     this.edges = isDragon ? [...DRAGON_EDGES] : [...PHOENIX_EDGES];
-    this.dragonLines = [...DRAGON_LINES];
+    this.dragonLines = isDragon ? [...DRAGON_LINES] : [...PHOENIX_DRAGON_LINES];
     this.phoenixLines = isDragon ? [] : [...PHOENIX_LINES];
     this.adj = isDragon ? DRAGON_ADJ : PHOENIX_ADJ;
     this.phase = 'placing';

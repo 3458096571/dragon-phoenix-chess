@@ -300,32 +300,45 @@ function RulesContent() {
   return (
     <div className="space-y-4 text-sm text-white/80">
       <section>
+        <h3 className="text-[#d4a853] font-semibold mb-2">🎯 游戏目标</h3>
+        <p>吃掉对方所有棋子即可获胜！</p>
+      </section>
+      <Separator className="bg-[#d4a853]/20" />
+      <section>
+        <h3 className="text-[#d4a853] font-semibold mb-2">📋 基本流程</h3>
+        <ol className="list-decimal pl-5 space-y-1">
+          <li><strong>放子</strong>：轮流把手中的棋子放到空节点上</li>
+          <li><strong>吃子</strong>：成线后可吃对方棋子</li>
+          <li><strong>移子</strong>：手空后沿连线每次移动1格</li>
+          <li><strong>胜负</strong>：对方棋子全灭即获胜</li>
+        </ol>
+      </section>
+      <Separator className="bg-[#d4a853]/20" />
+      <section>
         <h3 className="text-[#d4a853] font-semibold mb-2">🐉 龙棋（9子 · 24节点）</h3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>棋盘：3层同心正方形，24个节点</li>
-          <li>每人9子，轮流放置到空节点</li>
-          <li>三子连成一线（成龙）可吃对方1子</li>
-          <li>手空后进入移动阶段，每次沿边移动1格</li>
-          <li>对方棋子全灭即获胜</li>
+          <li>棋盘：3层同心正方形</li>
+          <li>每人9子</li>
+          <li><strong>成龙</strong>：横/竖3子成线 → 吃1子</li>
         </ul>
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
         <h3 className="text-[#d4a853] font-semibold mb-2">🦚 凤棋（12子 · 32节点）</h3>
         <ul className="list-disc pl-5 space-y-1">
-          <li>棋盘：4层同心正方形 + 对角线，32个节点</li>
-          <li>每人12子，规则与龙棋相同</li>
-          <li>四子连成一线（成凤）可吃对方2子</li>
-          <li>成凤吃子：可选2个普通子，或1个龙子</li>
+          <li>棋盘：4层同心正方形 + 对角线</li>
+          <li>每人12子</li>
+          <li><strong>成龙</strong>：横/竖/对角3子成线 → 吃1子</li>
+          <li><strong>成凤</strong>：横/竖/对角4子成线 → 吃2子</li>
         </ul>
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">🛡️ 保护等级</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">🛡️ 保护规则（谁大谁说了算）</h3>
         <ul className="list-disc pl-5 space-y-1">
-          <li><strong className="text-[#ff69b4]">凤子</strong>：参与成凤线，最高保护，不可被吃</li>
-          <li><strong className="text-[#ffd700]">龙子</strong>：参与成龙线，可被凤吃</li>
-          <li><strong className="text-white">普通子</strong>：无保护，可被龙吃、凤吃</li>
+          <li><strong className="text-[#ff69b4]">凤子</strong>（成凤线）{'>'} 最高保护，谁也吃不了</li>
+          <li><strong className="text-[#ffd700]">龙子</strong>（成龙线）{'>'} 只能被凤吃，不能被龙吃</li>
+          <li><strong className="text-white">普通子</strong>（不成线）{'>'} 谁都能吃</li>
         </ul>
       </section>
     </div>
