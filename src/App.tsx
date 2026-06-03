@@ -8,10 +8,20 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
-import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird, Bot, Globe, MessageSquare, Send, Loader2 } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird, Bot, Globe, MessageSquare, Send, Loader2, X } from 'lucide-react';
+
+const CHAT_API_BASE = 'https://freeapi.514179.xyz/v1';
+const CHAT_API_KEY = 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M';
+const CHAT_MODEL = 'Kimi-k2.6';
 
 type Screen = 'menu' | 'game' | 'ai-game';
 type AIDifficulty = 'easy' | 'medium' | 'hard';
+
+interface AIMessage {
+  role: 'user' | 'ai';
+  text: string;
+  time: string;
+}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('menu');
@@ -27,9 +37,16 @@ export default function App() {
   const [playerSide, setPlayerSide] = useState<'red' | 'blue'>('red');
   const [chatOpen, setChatOpen] = useState(false);
   const [chatInput, setChatInput] = useState('');
-  const [chatMessages, setChatMessages] = useState<{name: string, text: string, time: string}[]>([]);
+  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [aiChatLoading, setAiChatLoading] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const gameRef = useRef<DragonPhoenixGame>(game);
+
+  // Keep ref in sync
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
 
   // Audio context
   const audioCtx = useRef<AudioContext | null>(null);
@@ -109,7 +126,7 @@ export default function App() {
     setStatusMsg(g.getStatusText());
     setShowWin(false);
     setPlayerSide('red');
-    setChatMessages([]);
+    setAiMessages([]);
   }, [initAudio]);
 
   const startAIGame = useCallback((mode: GameMode, difficulty: AIDifficulty, side: 'red' | 'blue') => {
@@ -124,36 +141,31 @@ export default function App() {
     setEatableNodes([]);
     setStatusMsg(g.getStatusText());
     setShowWin(false);
-    setChatMessages([]);
+    setAiMessages([]);
     // 如果玩家选蓝方，AI先手
     if (side === 'blue') {
-      setTimeout(() => runAIMove(g, difficulty), 500);
+      setTimeout(() => runAIMoveRef(g, difficulty), 500);
     }
   }, [initAudio]);
 
-  const runAIMove = useCallback(async (currentGame: DragonPhoenixGame, difficulty: AIDifficulty) => {
+  // Use ref-based game to avoid stale closures
+  const runAIMoveRef = useCallback(async (currentGame: DragonPhoenixGame, difficulty: AIDifficulty) => {
     if (currentGame.getPhase() === 'gameover') return;
     setAiThinking(true);
     try {
       const move = await getAIMove(currentGame, difficulty);
-      // AI落子
       if (currentGame.getPhase() === 'placing' && move.nodeId) {
         const result = currentGame.handleNodeClick(move.nodeId);
-        handleGameResult(result, currentGame);
-      }
-      // AI移动
-      else if (currentGame.getPhase() === 'moving' && move.nodeId && move.toNodeId) {
+        handleGameResultRef(result, currentGame);
+      } else if (currentGame.getPhase() === 'moving' && move.nodeId && move.toNodeId) {
         currentGame.selectedNode = move.nodeId;
         const result = currentGame.handleNodeClick(move.toNodeId);
-        handleGameResult(result, currentGame);
-      }
-      // AI吃子
-      else if (currentGame.getPhase() === 'eating' && move.nodeId) {
+        handleGameResultRef(result, currentGame);
+      } else if (currentGame.getPhase() === 'eating' && move.nodeId) {
         const result = currentGame.handleNodeClick(move.nodeId);
-        handleGameResult(result, currentGame);
-        // 如果还有吃子次数，继续AI吃子
+        handleGameResultRef(result, currentGame);
         if (currentGame.getPhase() === 'eating') {
-          setTimeout(() => runAIMove(currentGame, difficulty), 600);
+          setTimeout(() => runAIMoveRef(currentGame, difficulty), 600);
         }
       }
     } catch (err) {
@@ -163,7 +175,7 @@ export default function App() {
     }
   }, []);
 
-  const handleGameResult = useCallback((result: any, currentGame: DragonPhoenixGame) => {
+  const handleGameResultRef = useCallback((result: any, currentGame: DragonPhoenixGame) => {
     if (result.type === 'select') {
       playSound('select');
     } else if (result.type === 'error') {
@@ -204,21 +216,18 @@ export default function App() {
 
   const handleNodeClick = useCallback((nodeId: string) => {
     initAudio();
-    const result = game.handleNodeClick(nodeId);
-    handleGameResult(result, game);
+    const currentGame = gameRef.current;
+    const result = currentGame.handleNodeClick(nodeId);
+    handleGameResultRef(result, currentGame);
 
     // AI模式下，玩家走完后轮到AI
-    if (screen === 'ai-game' && !result.gameOver && game.getPhase() !== 'eating') {
-      const nextGame = new DragonPhoenixGame(game.mode);
-      nextGame.loadState(game.getState());
-      // 检查是否进入吃子阶段
-      if (nextGame.getPhase() === 'eating') {
-        // 玩家吃子阶段，不触发AI
+    if (screen === 'ai-game' && !result.gameOver && currentGame.getPhase() !== 'eating') {
+      if (currentGame.getPhase() === 'eating') {
         return;
       }
-      setTimeout(() => runAIMove(nextGame, aiDifficulty), 600);
+      setTimeout(() => runAIMoveRef(currentGame, aiDifficulty), 600);
     }
-  }, [game, screen, aiDifficulty, initAudio, handleGameResult, runAIMove]);
+  }, [screen, aiDifficulty, initAudio, handleGameResultRef, runAIMoveRef]);
 
   const resetGame = useCallback(() => {
     if (screen === 'ai-game') {
@@ -236,13 +245,51 @@ export default function App() {
     setAiThinking(false);
   }, []);
 
-  const sendChat = useCallback(() => {
+  const sendChat = useCallback(async () => {
     if (!chatInput.trim()) return;
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    setChatMessages(prev => [...prev, { name: '我', text: chatInput.trim(), time }]);
+    const userText = chatInput.trim();
+    setAiMessages(prev => [...prev, { role: 'user', text: userText, time }]);
     setChatInput('');
-  }, [chatInput]);
+    setAiChatLoading(true);
+
+    try {
+      const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CHAT_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: CHAT_MODEL,
+          messages: [
+            {
+              role: 'system',
+              content: '你是一个龙凤棋AI对手，性格活泼俏皮，喜欢用中文简短回复（不超过50字），可以嘲讽、鼓励或调侃玩家。',
+            },
+            ...aiMessages.map(m => ({
+              role: m.role === 'user' ? 'user' as const : 'assistant' as const,
+              content: m.text,
+            })),
+            { role: 'user', content: userText },
+          ],
+          temperature: 0.9,
+          max_tokens: 128,
+        }),
+      });
+      if (!response.ok) throw new Error(`API ${response.status}`);
+      const data = await response.json();
+      const aiText = data.choices?.[0]?.message?.content || '……';
+      const aiTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
+      setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime }]);
+    } catch (err) {
+      console.error('AI chat error:', err);
+      setAiMessages(prev => [...prev, { role: 'ai', text: 'AI 暂时离线了，稍后再聊吧~', time: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}` }]);
+    } finally {
+      setAiChatLoading(false);
+    }
+  }, [chatInput, aiMessages]);
 
   // 同步游戏状态到UI
   useEffect(() => {
@@ -258,22 +305,22 @@ export default function App() {
   // 聊天自动滚动
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+  }, [aiMessages, aiChatLoading]);
 
   // AI吃子阶段自动处理
   useEffect(() => {
     if (screen === 'ai-game' && game.getPhase() === 'eating' && game.getCurrentPlayer() !== playerSide && !aiThinking) {
       const nextGame = new DragonPhoenixGame(game.mode);
       nextGame.loadState(game.getState());
-      setTimeout(() => runAIMove(nextGame, aiDifficulty), 600);
+      setTimeout(() => runAIMoveRef(nextGame, aiDifficulty), 600);
     }
-  }, [game, screen, playerSide, aiThinking, aiDifficulty, runAIMove]);
+  }, [game, screen, playerSide, aiThinking, aiDifficulty, runAIMoveRef]);
 
   const isAIGame = screen === 'ai-game';
   const isPlayerTurn = !isAIGame || game.getCurrentPlayer() === playerSide;
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden">
+    <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden flex flex-col">
       <ParticleBackground />
 
       {/* Main Menu */}
@@ -361,9 +408,9 @@ export default function App() {
 
       {/* Game Screen */}
       {(screen === 'game' || screen === 'ai-game') && (
-        <div className="relative z-10 flex flex-col items-center min-h-screen py-3 px-2">
+        <div className="relative z-10 flex flex-col items-center min-h-0 h-screen py-3 px-2">
           {/* Top bar */}
-          <div className="w-full max-w-lg flex items-center justify-between mb-2">
+          <div className="w-full max-w-lg flex items-center justify-between mb-2 shrink-0">
             <Button variant="ghost" size="sm" onClick={backToMenu} className="text-[#d4a853]/70 hover:text-[#d4a853]">
               <Home className="w-4 h-4 mr-1" /> 返回
             </Button>
@@ -384,7 +431,7 @@ export default function App() {
           </div>
 
           {/* Status bar */}
-          <Card className="w-full max-w-lg mb-2 bg-[#0f0f1a]/80 border-[#d4a853]/20 backdrop-blur-sm">
+          <Card className="w-full max-w-lg mb-2 bg-[#0f0f1a]/80 border-[#d4a853]/20 backdrop-blur-sm shrink-0">
             <div className="p-2.5 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className={`w-3 h-3 rounded-full ${game.currentPlayer === 'red' ? 'bg-[#ff69b4] shadow-[0_0_8px_#ff69b4]' : 'bg-[#2980b9] shadow-[0_0_8px_#2980b9]'}`} />
@@ -408,7 +455,7 @@ export default function App() {
           </Card>
 
           {/* Board */}
-          <div className="flex-1 flex items-center justify-center w-full relative">
+          <div className="flex-1 flex items-center justify-center w-full relative min-h-0">
             <div className={`transition-opacity duration-300 ${!isPlayerTurn || aiThinking ? 'opacity-60' : 'opacity-100'}`}>
               <ChessBoard
                 game={game}
@@ -417,48 +464,51 @@ export default function App() {
                 eatableNodes={eatableNodes}
               />
             </div>
-            {/* AI思考遮罩 */}
-            {aiThinking && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/40 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2">
-                  <Loader2 className="w-5 h-5 text-[#c084fc] animate-spin" />
-                  <span className="text-[#c084fc] text-sm font-medium">AI 思考中...</span>
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Chat button */}
+          {/* Chat toggle button */}
           <button
             onClick={() => setChatOpen(!chatOpen)}
-            className="fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-[#d4a853]/20 border border-[#d4a853]/40 flex items-center justify-center hover:bg-[#d4a853]/30 transition-colors"
+            className="shrink-0 z-40 w-12 h-12 rounded-full bg-[#d4a853]/20 border border-[#d4a853]/40 flex items-center justify-center hover:bg-[#d4a853]/30 transition-colors mt-2"
           >
-            <MessageSquare className="w-5 h-5 text-[#d4a853]" />
+            {chatOpen ? <X className="w-5 h-5 text-[#d4a853]" /> : <MessageSquare className="w-5 h-5 text-[#d4a853]" />}
           </button>
 
-          {/* Chat panel */}
+          {/* iOS-style Chat panel */}
           {chatOpen && (
-            <div className="fixed bottom-20 right-4 z-40 w-80 bg-[#0f0f1a]/95 border border-[#d4a853]/30 rounded-xl backdrop-blur-sm flex flex-col overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
-              <div className="p-3 border-b border-[#d4a853]/20 flex items-center justify-between">
+            <div className="shrink-0 w-full max-w-lg mt-2 bg-[#0f0f1a]/95 border border-[#d4a853]/30 rounded-t-xl backdrop-blur-sm flex flex-col overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] h-[45vh] md:h-80">
+              <div className="p-3 border-b border-[#d4a853]/20 flex items-center justify-between shrink-0">
                 <span className="text-sm font-medium text-[#d4a853]">对局聊天</span>
-                <button onClick={() => setChatOpen(false)} className="text-white/40 hover:text-white/70">✕</button>
+                <button onClick={() => setChatOpen(false)} className="text-white/40 hover:text-white/70">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <div className="flex-1 max-h-60 overflow-y-auto p-3 space-y-2">
-                {chatMessages.length === 0 && (
-                  <p className="text-xs text-white/30 text-center py-4">暂无消息，开始聊天吧~</p>
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {aiMessages.length === 0 && (
+                  <p className="text-xs text-white/30 text-center py-4">暂无消息，开始和 AI 聊天吧~</p>
                 )}
-                {chatMessages.map((msg, i) => (
-                  <div key={i} className="text-sm">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-[#d4a853]">{msg.name}</span>
-                      <span className="text-[10px] text-white/30">{msg.time}</span>
+                {aiMessages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
+                      msg.role === 'user'
+                        ? 'bg-[#d4a853] text-black rounded-br-md'
+                        : 'bg-[#2a2a3e] text-white rounded-bl-md'
+                    }`}>
+                      {msg.text}
                     </div>
-                    <p className="text-white/80 mt-0.5">{msg.text}</p>
                   </div>
                 ))}
+                {aiChatLoading && (
+                  <div className="flex justify-start">
+                    <div className="bg-[#2a2a3e] text-white rounded-2xl rounded-bl-md px-3 py-2 text-sm flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span className="text-white/60">AI 正在输入...</span>
+                    </div>
+                  </div>
+                )}
                 <div ref={chatEndRef} />
               </div>
-              <div className="p-2 border-t border-[#d4a853]/20 flex gap-2">
+              <div className="p-2 border-t border-[#d4a853]/20 flex gap-2 shrink-0">
                 <Input
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}

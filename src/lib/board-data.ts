@@ -12,7 +12,7 @@ export const DRAGON_NODES: string[] = [
 ];
 
 export const PHOENIX_NODES: string[] = [
-  ...DRAGON_NODES, ...ringNodes(4),
+  '0,0', ...DRAGON_NODES, ...ringNodes(4),
 ];
 
 function ringEdges(ring: number): [string, string][] {

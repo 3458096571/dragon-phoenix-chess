@@ -1,12 +1,7 @@
-import OpenAI from 'openai';
 import { DragonPhoenixGame } from './game-engine';
 
-const client = new OpenAI({
-  baseURL: 'https://freeapi.514179.xyz/v1',
-  apiKey: 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M',
-  dangerouslyAllowBrowser: true,
-});
-
+const API_BASE = 'https://freeapi.514179.xyz/v1';
+const API_KEY = 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M';
 const MODEL = 'Kimi-k2.6';
 
 function getRandomItem<T>(arr: T[]): T {
@@ -37,6 +32,7 @@ function getRandomValidMove(game: DragonPhoenixGame): { nodeId: string; toNodeId
     const eatable = game.getEatablePieces(player, game.eatType);
     if (eatable.length === 0) return null;
 
+    // 成凤双吃模式：需要选两个普通子
     if (game.eatType === 'phoenix' && game.eatMode === 'double_first') {
       const normals = eatable.filter((n) => game.getProtectionLevel(n) === 'normal');
       if (normals.length >= 2) {
@@ -44,12 +40,15 @@ function getRandomValidMove(game: DragonPhoenixGame): { nodeId: string; toNodeId
         const second = getRandomItem(normals.filter((n) => n !== first));
         return { nodeId: first, toNodeId: second };
       }
-      if (normals.length === 1 && eatable.some((n) => game.getProtectionLevel(n) === 'dragon')) {
-        return { nodeId: getRandomItem(eatable.filter((n) => game.getProtectionLevel(n) === 'dragon')) };
+      // 普通子不足2个， fallback 为单吃龙子
+      const dragons = eatable.filter((n) => game.getProtectionLevel(n) === 'dragon');
+      if (dragons.length > 0) {
+        return { nodeId: getRandomItem(dragons) };
       }
       return { nodeId: getRandomItem(eatable) };
     }
 
+    // 单吃模式（dragon 或 phoenix single）
     return { nodeId: getRandomItem(eatable) };
   }
 
@@ -70,9 +69,12 @@ function buildPrompt(game: DragonPhoenixGame, difficulty: 'easy' | 'medium' | 'h
   }
 
   let validMovesStr = '';
+  let responseFormat = '';
+
   if (state.phase === 'placing') {
     const empties = game.getAllNodeIds().filter((n) => state.board[n] === null);
     validMovesStr = `可落子位置（空位）：${empties.join(', ')}`;
+    responseFormat = '{"nodeId": "x,y"}';
   } else if (state.phase === 'moving') {
     const ownPieces = game.getAllNodeIds().filter((n) => state.board[n] === player);
     const lines: string[] = [];
@@ -82,15 +84,23 @@ function buildPrompt(game: DragonPhoenixGame, difficulty: 'easy' | 'medium' | 'h
         lines.push(`  ${from} -> ${targets.join(', ')}`);
       }
     }
-    validMovesStr = `可移动路线：\n${lines.join('\n')}`;
+    validMovesStr = `可移动路线（先选棋子，再选目标位置）：\n${lines.join('\n')}`;
+    responseFormat = '{"nodeId": "from_x,from_y", "toNodeId": "to_x,to_y"}';
   } else if (state.phase === 'eating') {
     const eatable = game.getEatablePieces(player, state.eatType!);
     if (state.eatType === 'phoenix' && state.eatMode === 'double_first') {
       const normals = eatable.filter((n) => game.getProtectionLevel(n) === 'normal');
       const dragons = eatable.filter((n) => game.getProtectionLevel(n) === 'dragon');
-      validMovesStr = `成凤吃子模式：双吃（需选两个普通子）\n  普通子：${normals.join(', ')}\n  龙子（单吃）：${dragons.join(', ')}`;
+      validMovesStr = `成凤吃子模式：双吃（需选两个普通子）\n  普通子：${normals.join(', ')}\n  龙子（单吃备选）：${dragons.join(', ')}`;
+      responseFormat = '{"nodeId": "first_x,first_y", "toNodeId": "second_x,second_y"}';
+    } else if (state.eatType === 'phoenix' && state.eatMode === 'single') {
+      const normals = eatable.filter((n) => game.getProtectionLevel(n) === 'normal');
+      const dragons = eatable.filter((n) => game.getProtectionLevel(n) === 'dragon');
+      validMovesStr = `成凤吃子模式：单吃（可选一个普通子进入双吃模式，或直接吃一个龙子）\n  普通子（选后进入双吃）：${normals.join(', ')}\n  龙子（直接吃掉）：${dragons.join(', ')}`;
+      responseFormat = '{"nodeId": "x,y"}';
     } else {
-      validMovesStr = `${state.eatType === 'dragon' ? '成龙' : '成凤'}吃子，可选目标：${eatable.join(', ')}`;
+      validMovesStr = `成龙吃子，可选目标：${eatable.join(', ')}`;
+      responseFormat = '{"nodeId": "x,y"}';
     }
   }
 
@@ -105,7 +115,7 @@ function buildPrompt(game: DragonPhoenixGame, difficulty: 'easy' | 'medium' | 'h
 游戏规则简介：
 - 棋盘由多个节点和连线组成，分为"龙棋"（3环）和"凤棋"（4环）两种模式。
 - 落子阶段：双方轮流在空位落子，手中棋子用完进入移动阶段。
-- 移动阶段：每次沿连线移动一枚己方棋子到相邻空位。
+- 移动阶段：每次沿连线移动一枚己方棋子到相邻空位。操作分两步：先选中一枚己方棋子，再点击相邻空位移动。
 - 成龙：三枚己方棋子在一条直线上连成一线，可吃对方一个普通子。
 - 成凤：四枚己方棋子在一条直线上连成一线，可吃对方两个普通子，或一个龙子。
 - 被成龙保护的棋子（属于某条成龙线）不能被普通吃子吃掉；被成凤保护的棋子（属于某条成凤线）不能被成凤双吃吃掉。
@@ -131,7 +141,7 @@ ${difficultyDesc[difficulty]}
 
 请根据当前阶段，从上述合法走法中选择最优的一步，直接回复一个JSON对象，不要包含任何其他文字：
 
-${state.phase === 'placing' ? '{"nodeId": "x,y"}' : ''}${state.phase === 'moving' ? '{"nodeId": "from_x,from_y", "toNodeId": "to_x,to_y"}' : ''}${state.phase === 'eating' ? (state.eatType === 'phoenix' && state.eatMode === 'double_first' ? '{"nodeId": "first_x,first_y", "toNodeId": "second_x,second_y"}' : '{"nodeId": "x,y"}') : ''}
+${responseFormat}
 `;
 }
 
@@ -198,6 +208,33 @@ function isMoveValid(
   return false;
 }
 
+async function callChatCompletion(prompt: string, difficulty: 'easy' | 'medium' | 'hard'): Promise<string> {
+  const response = await fetch(`${API_BASE}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: '你是一个龙凤棋AI对手，只输出JSON格式的走法，不要有任何解释。' },
+        { role: 'user', content: prompt },
+      ],
+      temperature: difficulty === 'easy' ? 0.9 : difficulty === 'medium' ? 0.7 : 0.3,
+      max_tokens: 256,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`API 请求失败: ${response.status} ${response.statusText}${errorText ? ' - ' + errorText : ''}`);
+  }
+
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
 export async function getAIMove(
   game: DragonPhoenixGame,
   difficulty: 'easy' | 'medium' | 'hard'
@@ -210,22 +247,13 @@ export async function getAIMove(
   const prompt = buildPrompt(game, difficulty);
 
   try {
-    const response = await client.chat.completions.create({
-      model: MODEL,
-      messages: [
-        { role: 'system', content: '你是一个龙凤棋AI对手，只输出JSON格式的走法，不要有任何解释。' },
-        { role: 'user', content: prompt },
-      ],
-      temperature: difficulty === 'easy' ? 0.9 : difficulty === 'medium' ? 0.7 : 0.3,
-      max_tokens: 256,
-    });
-
-    const text = response.choices[0]?.message?.content || '';
+    const text = await callChatCompletion(prompt, difficulty);
     const parsed = parseAIResponse(text, phase, game.eatType, game.eatMode);
 
     if (parsed && isMoveValid(game, parsed)) {
       return parsed;
     }
+    console.warn('AI 返回的走法不合法，使用随机策略回退:', parsed, 'phase:', phase, 'eatType:', game.eatType, 'eatMode:', game.eatMode);
   } catch (err) {
     console.warn('AI API调用失败，使用随机策略回退:', err);
   }
