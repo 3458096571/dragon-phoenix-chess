@@ -1,8 +1,10 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
 import { DragonPhoenixGame, type GameMode } from '@/lib/game-engine';
 import { ChessBoard } from '@/components/ChessBoard';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { getAIMove } from '@/lib/ai-service';
+
+const OnlineGame = lazy(() => import('@/components/OnlineGame'));
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
@@ -14,7 +16,7 @@ const CHAT_API_BASE = 'https://freeapi.514179.xyz/v1';
 const CHAT_API_KEY = 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M';
 const CHAT_MODEL = 'Kimi-k2.6';
 
-type Screen = 'menu' | 'game' | 'ai-game';
+type Screen = 'menu' | 'game' | 'ai-game' | 'online';
 type AIDifficulty = 'easy' | 'medium' | 'hard';
 
 interface AIMessage {
@@ -386,11 +388,11 @@ export default function App() {
             {/* 在线对战 */}
             <div className="text-xs text-[#d4a853]/50 uppercase tracking-widest mt-3 mb-1">在线对战</div>
             <Button
-              disabled
-              className="h-12 text-base font-semibold bg-gradient-to-r from-[#0a1a2e] to-[#0e2038] border border-[#d4a853]/20 text-white/40 cursor-not-allowed"
+              onClick={() => setScreen('online')}
+              className="h-12 text-base font-semibold bg-gradient-to-r from-[#0a1a2e] to-[#0e2038] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
             >
-              <Globe className="w-5 h-5 mr-3 text-white/30" />
-              联机对战（即将上线）
+              <Globe className="w-5 h-5 mr-3 text-[#4ade80]" />
+              联机对战
             </Button>
 
             <Dialog>
@@ -559,6 +561,20 @@ export default function App() {
             </div>
           )}
         </div>
+      )}
+
+      {/* Online Game Screen */}
+      {screen === 'online' && (
+        <Suspense fallback={
+          <div className="relative z-10 flex items-center justify-center min-h-screen">
+            <div className="text-center">
+              <Loader2 className="w-10 h-10 text-[#d4a853] animate-spin mx-auto mb-4" />
+              <p className="text-[#d4a853]">加载联机对战...</p>
+            </div>
+          </div>
+        }>
+          <OnlineGame />
+        </Suspense>
       )}
     </div>
   );

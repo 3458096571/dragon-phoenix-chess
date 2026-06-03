@@ -110,12 +110,13 @@ export class DragonPhoenixGame {
     const handCount = player === 'red' ? this.redHand : this.blueHand;
     if (handCount <= 0) return { type: 'error' as const, success: false, message: '手中无子可落' };
 
+    // 落子前先保存已有的连线
+    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
+    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
+
     this.board.set(nodeId, player);
     if (player === 'red') { this.redHand--; this.redOnBoard++; }
     else { this.blueHand--; this.blueOnBoard++; }
-
-    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
-    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
 
     const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines, prevDragonLines);
     const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines, prevPhoenixLines);
@@ -158,12 +159,13 @@ export class DragonPhoenixGame {
     if (!(this.adj[from] || []).includes(nodeId)) return { type: 'error' as const, success: false, message: '只能移动到相邻空位' };
     if (this.board.get(nodeId) !== null) return { type: 'error' as const, success: false, message: '目标位置已有棋子' };
 
+    // 移动前先保存已有的连线
+    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
+    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
+
     this.board.set(from, null);
     this.board.set(nodeId, player);
     this.selectedNode = null;
-
-    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
-    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
 
     const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines, prevDragonLines);
     const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines, prevPhoenixLines);
