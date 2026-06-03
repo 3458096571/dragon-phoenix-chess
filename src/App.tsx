@@ -1,10 +1,9 @@
-import { useState, useCallback, useRef, useEffect, lazy, Suspense } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { DragonPhoenixGame, type GameMode } from '@/lib/game-engine';
 import { ChessBoard } from '@/components/ChessBoard';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { getAIMove } from '@/lib/ai-service';
-
-const OnlineGame = lazy(() => import('@/components/OnlineGame'));
+import OnlineGame from '@/components/OnlineGame';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
@@ -292,7 +291,8 @@ export default function App() {
       });
       if (!response.ok) throw new Error(`API ${response.status}`);
       const data = await response.json();
-      const aiText = data.choices?.[0]?.message?.content || '……';
+      const msg = data.choices?.[0]?.message;
+      const aiText = msg?.content || msg?.reasoning_content || '……';
       const aiTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
       setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime }]);
     } catch (err) {
@@ -564,18 +564,7 @@ export default function App() {
       )}
 
       {/* Online Game Screen */}
-      {screen === 'online' && (
-        <Suspense fallback={
-          <div className="relative z-10 flex items-center justify-center min-h-screen">
-            <div className="text-center">
-              <Loader2 className="w-10 h-10 text-[#d4a853] animate-spin mx-auto mb-4" />
-              <p className="text-[#d4a853]">加载联机对战...</p>
-            </div>
-          </div>
-        }>
-          <OnlineGame />
-        </Suspense>
-      )}
+      {screen === 'online' && <OnlineGame />}
     </div>
   );
 }

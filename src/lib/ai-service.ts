@@ -232,7 +232,8 @@ async function callChatCompletion(prompt: string, difficulty: 'easy' | 'medium' 
   }
 
   const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
+  const msg = data.choices?.[0]?.message;
+  return msg?.content || msg?.reasoning_content || '';
 }
 
 export async function getAIMove(
