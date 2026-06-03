@@ -2,13 +2,16 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { DragonPhoenixGame, type GameMode } from '@/lib/game-engine';
 import { ChessBoard } from '@/components/ChessBoard';
 import { ParticleBackground } from '@/components/ParticleBackground';
+import { getAIMove } from '@/lib/ai-service';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird, Bot, Globe, MessageSquare, Send, Loader2 } from 'lucide-react';
 
-type Screen = 'menu' | 'game';
+type Screen = 'menu' | 'game' | 'ai-game';
+type AIDifficulty = 'easy' | 'medium' | 'hard';
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('menu');
@@ -19,7 +22,14 @@ export default function App() {
   const [statusMsg, setStatusMsg] = useState('');
   const [soundOn, setSoundOn] = useState(true);
   const [showWin, setShowWin] = useState(false);
+  const [aiDifficulty, setAiDifficulty] = useState<AIDifficulty>('medium');
+  const [aiThinking, setAiThinking] = useState(false);
+  const [playerSide, setPlayerSide] = useState<'red' | 'blue'>('red');
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatInput, setChatInput] = useState('');
+  const [chatMessages, setChatMessages] = useState<{name: string, text: string, time: string}[]>([]);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Audio context
   const audioCtx = useRef<AudioContext | null>(null);
@@ -98,12 +108,62 @@ export default function App() {
     setEatableNodes([]);
     setStatusMsg(g.getStatusText());
     setShowWin(false);
+    setPlayerSide('red');
+    setChatMessages([]);
   }, [initAudio]);
 
-  const handleNodeClick = useCallback((nodeId: string) => {
+  const startAIGame = useCallback((mode: GameMode, difficulty: AIDifficulty, side: 'red' | 'blue') => {
     initAudio();
-    const result = game.handleNodeClick(nodeId);
+    const g = new DragonPhoenixGame(mode);
+    setGame(g);
+    setGameMode(mode);
+    setAiDifficulty(difficulty);
+    setPlayerSide(side);
+    setScreen('ai-game');
+    setFlashLines([]);
+    setEatableNodes([]);
+    setStatusMsg(g.getStatusText());
+    setShowWin(false);
+    setChatMessages([]);
+    // 如果玩家选蓝方，AI先手
+    if (side === 'blue') {
+      setTimeout(() => runAIMove(g, difficulty), 500);
+    }
+  }, [initAudio]);
 
+  const runAIMove = useCallback(async (currentGame: DragonPhoenixGame, difficulty: AIDifficulty) => {
+    if (currentGame.getPhase() === 'gameover') return;
+    setAiThinking(true);
+    try {
+      const move = await getAIMove(currentGame, difficulty);
+      // AI落子
+      if (currentGame.getPhase() === 'placing' && move.nodeId) {
+        const result = currentGame.handleNodeClick(move.nodeId);
+        handleGameResult(result, currentGame);
+      }
+      // AI移动
+      else if (currentGame.getPhase() === 'moving' && move.nodeId && move.toNodeId) {
+        currentGame.selectedNode = move.nodeId;
+        const result = currentGame.handleNodeClick(move.toNodeId);
+        handleGameResult(result, currentGame);
+      }
+      // AI吃子
+      else if (currentGame.getPhase() === 'eating' && move.nodeId) {
+        const result = currentGame.handleNodeClick(move.nodeId);
+        handleGameResult(result, currentGame);
+        // 如果还有吃子次数，继续AI吃子
+        if (currentGame.getPhase() === 'eating') {
+          setTimeout(() => runAIMove(currentGame, difficulty), 600);
+        }
+      }
+    } catch (err) {
+      console.error('AI move error:', err);
+    } finally {
+      setAiThinking(false);
+    }
+  }, []);
+
+  const handleGameResult = useCallback((result: any, currentGame: DragonPhoenixGame) => {
     if (result.type === 'select') {
       playSound('select');
     } else if (result.type === 'error') {
@@ -135,24 +195,54 @@ export default function App() {
       playSound('win');
     }
 
-    // 强制重新渲染，确保状态同步
     setGame(prev => {
       const g = new DragonPhoenixGame(prev.mode);
-      g.loadState(prev.getState());
+      g.loadState(currentGame.getState());
       return g;
     });
-  }, [game, initAudio, playSound]);
+  }, [playSound]);
+
+  const handleNodeClick = useCallback((nodeId: string) => {
+    initAudio();
+    const result = game.handleNodeClick(nodeId);
+    handleGameResult(result, game);
+
+    // AI模式下，玩家走完后轮到AI
+    if (screen === 'ai-game' && !result.gameOver && game.getPhase() !== 'eating') {
+      const nextGame = new DragonPhoenixGame(game.mode);
+      nextGame.loadState(game.getState());
+      // 检查是否进入吃子阶段
+      if (nextGame.getPhase() === 'eating') {
+        // 玩家吃子阶段，不触发AI
+        return;
+      }
+      setTimeout(() => runAIMove(nextGame, aiDifficulty), 600);
+    }
+  }, [game, screen, aiDifficulty, initAudio, handleGameResult, runAIMove]);
 
   const resetGame = useCallback(() => {
-    startGame(gameMode);
-  }, [startGame, gameMode]);
+    if (screen === 'ai-game') {
+      startAIGame(gameMode, aiDifficulty, playerSide);
+    } else {
+      startGame(gameMode);
+    }
+  }, [screen, gameMode, aiDifficulty, playerSide, startAIGame, startGame]);
 
   const backToMenu = useCallback(() => {
     setScreen('menu');
     setFlashLines([]);
     setEatableNodes([]);
     setShowWin(false);
+    setAiThinking(false);
   }, []);
+
+  const sendChat = useCallback(() => {
+    if (!chatInput.trim()) return;
+    const now = new Date();
+    const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+    setChatMessages(prev => [...prev, { name: '我', text: chatInput.trim(), time }]);
+    setChatInput('');
+  }, [chatInput]);
 
   // 同步游戏状态到UI
   useEffect(() => {
@@ -165,6 +255,23 @@ export default function App() {
     }
   }, [game.phase, game.currentPlayer, game.eatType, game.eatCount, game]);
 
+  // 聊天自动滚动
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages]);
+
+  // AI吃子阶段自动处理
+  useEffect(() => {
+    if (screen === 'ai-game' && game.getPhase() === 'eating' && game.getCurrentPlayer() !== playerSide && !aiThinking) {
+      const nextGame = new DragonPhoenixGame(game.mode);
+      nextGame.loadState(game.getState());
+      setTimeout(() => runAIMove(nextGame, aiDifficulty), 600);
+    }
+  }, [game, screen, playerSide, aiThinking, aiDifficulty, runAIMove]);
+
+  const isAIGame = screen === 'ai-game';
+  const isPlayerTurn = !isAIGame || game.getCurrentPlayer() === playerSide;
+
   return (
     <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden">
       <ParticleBackground />
@@ -172,8 +279,8 @@ export default function App() {
       {/* Main Menu */}
       {screen === 'menu' && (
         <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4">
-          <div className="text-center mb-12">
-            <h1 className="text-6xl font-bold mb-4 tracking-wider" style={{
+          <div className="text-center mb-10">
+            <h1 className="text-6xl font-bold mb-3 tracking-wider" style={{
               background: 'linear-gradient(135deg, #d4a853 0%, #f0d78c 50%, #d4a853 100%)',
               WebkitBackgroundClip: 'text',
               WebkitTextFillColor: 'transparent',
@@ -184,29 +291,60 @@ export default function App() {
             <p className="text-[#d4a853]/60 text-lg tracking-widest">DRAGON · PHOENIX · CHESS</p>
           </div>
 
-          <div className="flex flex-col gap-4 w-full max-w-sm">
+          <div className="flex flex-col gap-3 w-full max-w-sm">
+            {/* 本地对战 */}
+            <div className="text-xs text-[#d4a853]/50 uppercase tracking-widest mb-1">本地对战</div>
             <Button
               onClick={() => startGame('dragon')}
-              className="h-16 text-xl font-semibold bg-gradient-to-r from-[#1a1a2e] to-[#16213e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
+              className="h-14 text-lg font-semibold bg-gradient-to-r from-[#1a1a2e] to-[#16213e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
             >
-              <Swords className="w-6 h-6 mr-3 text-[#ff69b4]" />
+              <Swords className="w-5 h-5 mr-3 text-[#ff69b4]" />
               龙棋 · 9子24节点
             </Button>
             <Button
               onClick={() => startGame('phoenix')}
-              className="h-16 text-xl font-semibold bg-gradient-to-r from-[#1a1a2e] to-[#16213e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
+              className="h-14 text-lg font-semibold bg-gradient-to-r from-[#1a1a2e] to-[#16213e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
             >
-              <Bird className="w-6 h-6 mr-3 text-[#00ff88]" />
+              <Bird className="w-5 h-5 mr-3 text-[#00ff88]" />
               凤棋 · 12子32节点
+            </Button>
+
+            {/* AI对战 */}
+            <div className="text-xs text-[#d4a853]/50 uppercase tracking-widest mt-3 mb-1">AI 对战</div>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button
+                  className="h-14 text-lg font-semibold bg-gradient-to-r from-[#1a0a2e] to-[#2a103e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
+                >
+                  <Bot className="w-5 h-5 mr-3 text-[#c084fc]" />
+                  挑战 AI
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-[#0f0f1a] border-[#d4a853]/30 text-white max-w-sm">
+                <DialogHeader>
+                  <DialogTitle className="text-xl text-[#d4a853]">选择 AI 对战设置</DialogTitle>
+                </DialogHeader>
+                <AIGameSetup onStart={startAIGame} />
+              </DialogContent>
+            </Dialog>
+
+            {/* 在线对战 */}
+            <div className="text-xs text-[#d4a853]/50 uppercase tracking-widest mt-3 mb-1">在线对战</div>
+            <Button
+              disabled
+              className="h-12 text-base font-semibold bg-gradient-to-r from-[#0a1a2e] to-[#0e2038] border border-[#d4a853]/20 text-white/40 cursor-not-allowed"
+            >
+              <Globe className="w-5 h-5 mr-3 text-white/30" />
+              联机对战（即将上线）
             </Button>
 
             <Dialog>
               <DialogTrigger asChild>
                 <Button
                   variant="outline"
-                  className="h-12 text-lg border-[#d4a853]/30 text-[#d4a853] hover:bg-[#d4a853]/10 hover:border-[#d4a853]"
+                  className="h-11 text-base border-[#d4a853]/30 text-[#d4a853] hover:bg-[#d4a853]/10 hover:border-[#d4a853] mt-2"
                 >
-                  <HelpCircle className="w-5 h-5 mr-2" />
+                  <HelpCircle className="w-4 h-4 mr-2" />
                   游戏规则
                 </Button>
               </DialogTrigger>
@@ -222,14 +360,20 @@ export default function App() {
       )}
 
       {/* Game Screen */}
-      {screen === 'game' && (
-        <div className="relative z-10 flex flex-col items-center min-h-screen py-4 px-2">
+      {(screen === 'game' || screen === 'ai-game') && (
+        <div className="relative z-10 flex flex-col items-center min-h-screen py-3 px-2">
           {/* Top bar */}
           <div className="w-full max-w-lg flex items-center justify-between mb-2">
             <Button variant="ghost" size="sm" onClick={backToMenu} className="text-[#d4a853]/70 hover:text-[#d4a853]">
               <Home className="w-4 h-4 mr-1" /> 返回
             </Button>
             <div className="flex items-center gap-2">
+              {isAIGame && (
+                <div className="flex items-center gap-1.5 text-xs text-white/50 mr-2">
+                  <Bot className="w-3.5 h-3.5 text-[#c084fc]" />
+                  <span>AI · {aiDifficulty === 'easy' ? '简单' : aiDifficulty === 'medium' ? '中等' : '困难'}</span>
+                </div>
+              )}
               <Button variant="ghost" size="sm" onClick={() => setSoundOn(!soundOn)} className="text-[#d4a853]/70 hover:text-[#d4a853]">
                 {soundOn ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
               </Button>
@@ -240,13 +384,19 @@ export default function App() {
           </div>
 
           {/* Status bar */}
-          <Card className="w-full max-w-lg mb-3 bg-[#0f0f1a]/80 border-[#d4a853]/20 backdrop-blur-sm">
-            <div className="p-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
+          <Card className="w-full max-w-lg mb-2 bg-[#0f0f1a]/80 border-[#d4a853]/20 backdrop-blur-sm">
+            <div className="p-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
                 <div className={`w-3 h-3 rounded-full ${game.currentPlayer === 'red' ? 'bg-[#ff69b4] shadow-[0_0_8px_#ff69b4]' : 'bg-[#2980b9] shadow-[0_0_8px_#2980b9]'}`} />
                 <span className="text-sm font-medium text-[#d4a853]">{statusMsg}</span>
+                {aiThinking && (
+                  <span className="flex items-center gap-1 text-xs text-[#c084fc]">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    AI思考中...
+                  </span>
+                )}
               </div>
-              <div className="flex items-center gap-4 text-xs text-white/50">
+              <div className="flex items-center gap-3 text-xs text-white/50">
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-[#ff69b4]" /> 粉:{game.getHandCount('red')}+{game.getOnBoardCount('red')}
                 </span>
@@ -258,14 +408,70 @@ export default function App() {
           </Card>
 
           {/* Board */}
-          <div className="flex-1 flex items-center justify-center w-full">
-            <ChessBoard
-              game={game}
-              onNodeClick={handleNodeClick}
-              flashLines={flashLines}
-              eatableNodes={eatableNodes}
-            />
+          <div className="flex-1 flex items-center justify-center w-full relative">
+            <div className={`transition-opacity duration-300 ${!isPlayerTurn || aiThinking ? 'opacity-60' : 'opacity-100'}`}>
+              <ChessBoard
+                game={game}
+                onNodeClick={handleNodeClick}
+                flashLines={flashLines}
+                eatableNodes={eatableNodes}
+              />
+            </div>
+            {/* AI思考遮罩 */}
+            {aiThinking && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="bg-black/40 backdrop-blur-sm rounded-xl px-4 py-2 flex items-center gap-2">
+                  <Loader2 className="w-5 h-5 text-[#c084fc] animate-spin" />
+                  <span className="text-[#c084fc] text-sm font-medium">AI 思考中...</span>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Chat button */}
+          <button
+            onClick={() => setChatOpen(!chatOpen)}
+            className="fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full bg-[#d4a853]/20 border border-[#d4a853]/40 flex items-center justify-center hover:bg-[#d4a853]/30 transition-colors"
+          >
+            <MessageSquare className="w-5 h-5 text-[#d4a853]" />
+          </button>
+
+          {/* Chat panel */}
+          {chatOpen && (
+            <div className="fixed bottom-20 right-4 z-40 w-80 bg-[#0f0f1a]/95 border border-[#d4a853]/30 rounded-xl backdrop-blur-sm flex flex-col overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)]">
+              <div className="p-3 border-b border-[#d4a853]/20 flex items-center justify-between">
+                <span className="text-sm font-medium text-[#d4a853]">对局聊天</span>
+                <button onClick={() => setChatOpen(false)} className="text-white/40 hover:text-white/70">✕</button>
+              </div>
+              <div className="flex-1 max-h-60 overflow-y-auto p-3 space-y-2">
+                {chatMessages.length === 0 && (
+                  <p className="text-xs text-white/30 text-center py-4">暂无消息，开始聊天吧~</p>
+                )}
+                {chatMessages.map((msg, i) => (
+                  <div key={i} className="text-sm">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs text-[#d4a853]">{msg.name}</span>
+                      <span className="text-[10px] text-white/30">{msg.time}</span>
+                    </div>
+                    <p className="text-white/80 mt-0.5">{msg.text}</p>
+                  </div>
+                ))}
+                <div ref={chatEndRef} />
+              </div>
+              <div className="p-2 border-t border-[#d4a853]/20 flex gap-2">
+                <Input
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                  placeholder="输入消息..."
+                  className="flex-1 h-9 bg-[#1a1a2e] border-[#d4a853]/20 text-white text-sm"
+                />
+                <Button size="sm" onClick={sendChat} className="h-9 px-3 bg-[#d4a853]/20 hover:bg-[#d4a853]/30">
+                  <Send className="w-4 h-4 text-[#d4a853]" />
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Win Dialog */}
           {showWin && (
@@ -278,7 +484,11 @@ export default function App() {
                 }}>
                   {game.winner === 'red' ? '粉方' : '蓝方'}获胜！
                 </h2>
-                <p className="text-white/60 mb-6">恭喜获得胜利！</p>
+                <p className="text-white/60 mb-6">
+                  {isAIGame
+                    ? (game.winner === playerSide ? '恭喜你战胜了 AI！' : 'AI 获胜，再接再厉！')
+                    : '恭喜获得胜利！'}
+                </p>
                 <div className="flex gap-3 justify-center">
                   <Button onClick={resetGame} className="bg-[#d4a853] text-black hover:bg-[#f0d78c]">
                     再来一局
@@ -296,16 +506,108 @@ export default function App() {
   );
 }
 
+// AI 对战设置组件
+function AIGameSetup({ onStart }: { onStart: (mode: GameMode, difficulty: AIDifficulty, side: 'red' | 'blue') => void }) {
+  const [mode, setMode] = useState<GameMode>('dragon');
+  const [difficulty, setDifficulty] = useState<AIDifficulty>('medium');
+  const [side, setSide] = useState<'red' | 'blue'>('red');
+
+  return (
+    <div className="space-y-5 py-2">
+      {/* 模式选择 */}
+      <div>
+        <label className="text-sm text-[#d4a853] mb-2 block">棋盘模式</label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setMode('dragon')}
+            className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+              mode === 'dragon'
+                ? 'border-[#ff69b4] bg-[#ff69b4]/10 text-[#ff69b4]'
+                : 'border-white/10 text-white/50 hover:border-white/30'
+            }`}
+          >
+            龙棋
+          </button>
+          <button
+            onClick={() => setMode('phoenix')}
+            className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+              mode === 'phoenix'
+                ? 'border-[#00ff88] bg-[#00ff88]/10 text-[#00ff88]'
+                : 'border-white/10 text-white/50 hover:border-white/30'
+            }`}
+          >
+            凤棋
+          </button>
+        </div>
+      </div>
+
+      {/* 难度选择 */}
+      <div>
+        <label className="text-sm text-[#d4a853] mb-2 block">AI 难度</label>
+        <div className="flex gap-2">
+          {(['easy', 'medium', 'hard'] as AIDifficulty[]).map((d) => (
+            <button
+              key={d}
+              onClick={() => setDifficulty(d)}
+              className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+                difficulty === d
+                  ? 'border-[#c084fc] bg-[#c084fc]/10 text-[#c084fc]'
+                  : 'border-white/10 text-white/50 hover:border-white/30'
+              }`}
+            >
+              {d === 'easy' ? '简单' : d === 'medium' ? '中等' : '困难'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 阵营选择 */}
+      <div>
+        <label className="text-sm text-[#d4a853] mb-2 block">选择阵营</label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSide('red')}
+            className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+              side === 'red'
+                ? 'border-[#ff69b4] bg-[#ff69b4]/10 text-[#ff69b4]'
+                : 'border-white/10 text-white/50 hover:border-white/30'
+            }`}
+          >
+            粉方（先手）
+          </button>
+          <button
+            onClick={() => setSide('blue')}
+            className={`flex-1 py-2.5 rounded-lg border text-sm font-medium transition-all ${
+              side === 'blue'
+                ? 'border-[#2980b9] bg-[#2980b9]/10 text-[#74c0fc]'
+                : 'border-white/10 text-white/50 hover:border-white/30'
+            }`}
+          >
+            蓝方（后手）
+          </button>
+        </div>
+      </div>
+
+      <Button
+        onClick={() => onStart(mode, difficulty, side)}
+        className="w-full h-12 bg-[#d4a853] text-black hover:bg-[#f0d78c] font-semibold text-lg"
+      >
+        开始对战
+      </Button>
+    </div>
+  );
+}
+
 function RulesContent() {
   return (
     <div className="space-y-4 text-sm text-white/80">
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">🎯 游戏目标</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">游戏目标</h3>
         <p>吃掉对方所有棋子即可获胜！</p>
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">📋 基本流程</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">基本流程</h3>
         <ol className="list-decimal pl-5 space-y-1">
           <li><strong>放子</strong>：轮流把手中的棋子放到空节点上</li>
           <li><strong>吃子</strong>：成线后可吃对方棋子</li>
@@ -315,7 +617,7 @@ function RulesContent() {
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">🐉 龙棋（9子 · 24节点）</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">龙棋（9子 · 24节点）</h3>
         <ul className="list-disc pl-5 space-y-1">
           <li>棋盘：3层同心正方形</li>
           <li>每人9子</li>
@@ -324,7 +626,7 @@ function RulesContent() {
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">🦚 凤棋（12子 · 32节点）</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">凤棋（12子 · 32节点）</h3>
         <ul className="list-disc pl-5 space-y-1">
           <li>棋盘：4层同心正方形 + 对角线</li>
           <li>每人12子</li>
@@ -334,7 +636,7 @@ function RulesContent() {
       </section>
       <Separator className="bg-[#d4a853]/20" />
       <section>
-        <h3 className="text-[#d4a853] font-semibold mb-2">🛡️ 保护规则（谁大谁说了算）</h3>
+        <h3 className="text-[#d4a853] font-semibold mb-2">保护规则（谁大谁说了算）</h3>
         <ul className="list-disc pl-5 space-y-1">
           <li><strong className="text-[#ff69b4]">凤子</strong>（成凤线）{'>'} 最高保护，谁也吃不了</li>
           <li><strong className="text-[#ffd700]">龙子</strong>（成龙线）{'>'} 只能被凤吃，不能被龙吃</li>
