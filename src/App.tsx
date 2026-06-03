@@ -116,10 +116,6 @@ export default function App() {
         setFlashLines([...result.newDragons, ...result.newPhoenixes]);
         clearTimeout(flashTimer.current);
         flashTimer.current = setTimeout(() => setFlashLines([]), 2000);
-        const eatable = game.getEatablePieces(game.currentPlayer, game.eatType);
-        setEatableNodes(eatable);
-      } else {
-        setEatableNodes([]);
       }
     } else if (result.type === 'move') {
       playSound('move');
@@ -129,19 +125,9 @@ export default function App() {
         setFlashLines([...result.newDragons, ...result.newPhoenixes]);
         clearTimeout(flashTimer.current);
         flashTimer.current = setTimeout(() => setFlashLines([]), 2000);
-        const eatable = game.getEatablePieces(game.currentPlayer, game.eatType);
-        setEatableNodes(eatable);
-      } else {
-        setEatableNodes([]);
       }
-    } else if (result.type === 'eat' || result.type === 'eat_select') {
-      if (result.type === 'eat') playSound('capture');
-      if (game.eatCount > 0 && game.phase === 'eating') {
-        const eatable = game.getEatablePieces(game.currentPlayer, game.eatType);
-        setEatableNodes(eatable);
-      } else {
-        setEatableNodes([]);
-      }
+    } else if (result.type === 'eat') {
+      playSound('capture');
     }
 
     if (result.gameOver) {
@@ -149,8 +135,7 @@ export default function App() {
       playSound('win');
     }
 
-    setStatusMsg(game.getStatusText());
-    // Force re-render
+    // 强制重新渲染，确保状态同步
     setGame(prev => {
       const g = new DragonPhoenixGame(prev.mode);
       g.loadState(prev.getState());
@@ -169,15 +154,16 @@ export default function App() {
     setShowWin(false);
   }, []);
 
-  // Update eatable when phase changes
+  // 同步游戏状态到UI
   useEffect(() => {
+    setStatusMsg(game.getStatusText());
     if (game.phase === 'eating') {
       const eatable = game.getEatablePieces(game.currentPlayer, game.eatType);
       setEatableNodes(eatable);
     } else {
       setEatableNodes([]);
     }
-  }, [game.phase, game.currentPlayer, game.eatType, game.eatCount]);
+  }, [game.phase, game.currentPlayer, game.eatType, game.eatCount, game]);
 
   return (
     <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden">
@@ -203,7 +189,7 @@ export default function App() {
               onClick={() => startGame('dragon')}
               className="h-16 text-xl font-semibold bg-gradient-to-r from-[#1a1a2e] to-[#16213e] border border-[#d4a853]/30 hover:border-[#d4a853] hover:shadow-[0_0_20px_rgba(212,168,83,0.2)] transition-all duration-300"
             >
-              <Swords className="w-6 h-6 mr-3 text-[#e63946]" />
+              <Swords className="w-6 h-6 mr-3 text-[#ff69b4]" />
               龙棋 · 9子24节点
             </Button>
             <Button
@@ -257,12 +243,12 @@ export default function App() {
           <Card className="w-full max-w-lg mb-3 bg-[#0f0f1a]/80 border-[#d4a853]/20 backdrop-blur-sm">
             <div className="p-3 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${game.currentPlayer === 'red' ? 'bg-[#e63946] shadow-[0_0_8px_#e63946]' : 'bg-[#2980b9] shadow-[0_0_8px_#2980b9]'}`} />
+                <div className={`w-3 h-3 rounded-full ${game.currentPlayer === 'red' ? 'bg-[#ff69b4] shadow-[0_0_8px_#ff69b4]' : 'bg-[#2980b9] shadow-[0_0_8px_#2980b9]'}`} />
                 <span className="text-sm font-medium text-[#d4a853]">{statusMsg}</span>
               </div>
               <div className="flex items-center gap-4 text-xs text-white/50">
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#e63946]" /> 红:{game.getHandCount('red')}+{game.getOnBoardCount('red')}
+                  <span className="w-2 h-2 rounded-full bg-[#ff69b4]" /> 粉:{game.getHandCount('red')}+{game.getOnBoardCount('red')}
                 </span>
                 <span className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-[#2980b9]" /> 蓝:{game.getHandCount('blue')}+{game.getOnBoardCount('blue')}
@@ -290,7 +276,7 @@ export default function App() {
                   WebkitBackgroundClip: 'text',
                   WebkitTextFillColor: 'transparent',
                 }}>
-                  {game.winner === 'red' ? '红方' : '蓝方'}获胜！
+                  {game.winner === 'red' ? '粉方' : '蓝方'}获胜！
                 </h2>
                 <p className="text-white/60 mb-6">恭喜获得胜利！</p>
                 <div className="flex gap-3 justify-center">
@@ -337,7 +323,7 @@ function RulesContent() {
       <section>
         <h3 className="text-[#d4a853] font-semibold mb-2">🛡️ 保护等级</h3>
         <ul className="list-disc pl-5 space-y-1">
-          <li><strong className="text-[#ff6b6b]">凤子</strong>：参与成凤线，最高保护，不可被吃</li>
+          <li><strong className="text-[#ff69b4]">凤子</strong>：参与成凤线，最高保护，不可被吃</li>
           <li><strong className="text-[#ffd700]">龙子</strong>：参与成龙线，可被凤吃</li>
           <li><strong className="text-white">普通子</strong>：无保护，可被龙吃、凤吃</li>
         </ul>

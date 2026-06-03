@@ -127,11 +127,11 @@ export class DragonPhoenixGame {
       this.eatMode = 'single';
       this.eatFirstTarget = null;
       if (!this.canEatAny(player, this.eatType)) this.skipEat();
-      return { type: 'place' as const, success: true, newDragons, newPhoenixes, eatCount: totalEats, message: `${player === 'red' ? '红方' : '蓝方'}落子，成龙×${newDragons.length}${newPhoenixes.length > 0 ? '，成凤×' + newPhoenixes.length : ''}`, gameOver: false };
+      return { type: 'place' as const, success: true, newDragons, newPhoenixes, eatCount: totalEats, message: `${player === 'red' ? '粉方' : '蓝方'}落子，成龙×${newDragons.length}${newPhoenixes.length > 0 ? '，成凤×' + newPhoenixes.length : ''}`, gameOver: false };
     }
 
     this.endTurn();
-    return { type: 'place' as const, success: true, newDragons: [], newPhoenixes: [], eatCount: 0, message: `${player === 'red' ? '红方' : '蓝方'}落子`, gameOver: false };
+    return { type: 'place' as const, success: true, newDragons: [], newPhoenixes: [], eatCount: 0, message: `${player === 'red' ? '粉方' : '蓝方'}落子`, gameOver: false };
   }
 
   handleMovingClick(nodeId: string) {
@@ -172,11 +172,11 @@ export class DragonPhoenixGame {
       this.eatMode = 'single';
       this.eatFirstTarget = null;
       if (!this.canEatAny(player, this.eatType)) this.skipEat();
-      return { type: 'move' as const, success: true, from, to: nodeId, newDragons, newPhoenixes, eatCount: totalEats, message: `${player === 'red' ? '红方' : '蓝方'}移动，成龙×${newDragons.length}${newPhoenixes.length > 0 ? '，成凤×' + newPhoenixes.length : ''}`, gameOver: false };
+      return { type: 'move' as const, success: true, from, to: nodeId, newDragons, newPhoenixes, eatCount: totalEats, message: `${player === 'red' ? '粉方' : '蓝方'}移动，成龙×${newDragons.length}${newPhoenixes.length > 0 ? '，成凤×' + newPhoenixes.length : ''}`, gameOver: false };
     }
 
     this.endTurn();
-    return { type: 'move' as const, success: true, from, to: nodeId, newDragons: [], newPhoenixes: [], eatCount: 0, message: `${player === 'red' ? '红方' : '蓝方'}移动`, gameOver: false };
+    return { type: 'move' as const, success: true, from, to: nodeId, newDragons: [], newPhoenixes: [], eatCount: 0, message: `${player === 'red' ? '粉方' : '蓝方'}移动`, gameOver: false };
   }
 
   handleEatingClick(nodeId: string) {
@@ -333,8 +333,8 @@ export class DragonPhoenixGame {
   }
 
   getStatusText() {
-    const pName = this.currentPlayer === 'red' ? '红方' : '蓝方';
-    if (this.phase === 'gameover') return `${this.winner === 'red' ? '红方' : '蓝方'}获胜！`;
+    const pName = this.currentPlayer === 'red' ? '粉方' : '蓝方';
+    if (this.phase === 'gameover') return `${this.winner === 'red' ? '粉方' : '蓝方'}获胜！`;
     if (this.phase === 'eating') {
       let msg = `${pName} ${this.eatType === 'dragon' ? '成龙' : '成凤'}吃子（剩余${this.eatCount}次）`;
       if (this.eatMode === 'double_first') msg += ' - 请选择第二个普通子';

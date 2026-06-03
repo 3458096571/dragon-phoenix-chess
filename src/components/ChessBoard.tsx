@@ -4,6 +4,7 @@ import { DragonPhoenixGame } from '@/lib/game-engine';
 const GRID_UNIT = 50;
 const CENTER = 250;
 const PIECE_RADIUS = 16;
+const CLICK_RADIUS = 20; // 只有点击节点附近才落子
 
 function gridToSvg(x: number, y: number) {
   return { x: CENTER + x * GRID_UNIT, y: CENTER - y * GRID_UNIT };
@@ -35,7 +36,7 @@ export function ChessBoard({ game, onNodeClick, flashLines, eatableNodes }: Ches
       const dx = pos.x - clickX;
       const dy = pos.y - clickY;
       const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < minDist && dist < GRID_UNIT * 0.6) {
+      if (dist < minDist && dist < CLICK_RADIUS) {
         minDist = dist;
         nearest = nid;
       }
@@ -85,11 +86,11 @@ export function ChessBoard({ game, onNodeClick, flashLines, eatableNodes }: Ches
             <feMergeNode in="SourceGraphic" />
           </feMerge>
         </filter>
-        {/* Red piece gradient */}
-        <radialGradient id="redGrad" cx="35%" cy="35%" r="65%">
-          <stop offset="0%" stopColor="#ff6b6b" />
-          <stop offset="50%" stopColor="#e63946" />
-          <stop offset="100%" stopColor="#8b0000" />
+        {/* Pink piece gradient */}
+        <radialGradient id="pinkGrad" cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stopColor="#ffb6c1" />
+          <stop offset="50%" stopColor="#ff69b4" />
+          <stop offset="100%" stopColor="#c71585" />
         </radialGradient>
         {/* Blue piece gradient */}
         <radialGradient id="blueGrad" cx="35%" cy="35%" r="65%">
@@ -181,13 +182,13 @@ export function ChessBoard({ game, onNodeClick, flashLines, eatableNodes }: Ches
             {/* Outer glow */}
             <circle
               cx={pos.x} cy={pos.y} r={PIECE_RADIUS + 2}
-              fill={color === 'red' ? 'rgba(230,57,70,0.3)' : 'rgba(41,128,185,0.3)'}
+              fill={color === 'red' ? 'rgba(255,105,180,0.3)' : 'rgba(41,128,185,0.3)'}
               filter="url(#pieceGlow)"
             />
             {/* Main piece */}
             <circle
               cx={pos.x} cy={pos.y} r={PIECE_RADIUS}
-              fill={color === 'red' ? 'url(#redGrad)' : 'url(#blueGrad)'}
+              fill={color === 'red' ? 'url(#pinkGrad)' : 'url(#blueGrad)'}
               stroke={isSelected ? '#ffd700' : 'rgba(255,255,255,0.3)'}
               strokeWidth={isSelected ? 3 : 1}
             />
