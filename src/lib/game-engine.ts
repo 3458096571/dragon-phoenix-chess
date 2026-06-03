@@ -114,8 +114,11 @@ export class DragonPhoenixGame {
     if (player === 'red') { this.redHand--; this.redOnBoard++; }
     else { this.blueHand--; this.blueOnBoard++; }
 
-    const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines);
-    const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines);
+    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
+    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
+
+    const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines, prevDragonLines);
+    const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines, prevPhoenixLines);
     this.lastFormedDragons = newDragons;
     this.lastFormedPhoenixes = newPhoenixes;
 
@@ -159,8 +162,11 @@ export class DragonPhoenixGame {
     this.board.set(nodeId, player);
     this.selectedNode = null;
 
-    const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines);
-    const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines);
+    const prevDragonLines = this.getCompletedLines(this.dragonLines, player);
+    const prevPhoenixLines = this.getCompletedLines(this.phoenixLines, player);
+
+    const newDragons = this.checkNewFormations(nodeId, player, this.dragonLines, prevDragonLines);
+    const newPhoenixes = this.checkNewFormations(nodeId, player, this.phoenixLines, prevPhoenixLines);
     this.lastFormedDragons = newDragons;
     this.lastFormedPhoenixes = newPhoenixes;
 
@@ -222,11 +228,22 @@ export class DragonPhoenixGame {
     return { type: 'error' as const, success: false, message: '无法吃子' };
   }
 
-  checkNewFormations(nodeId: string, player: PlayerColor, lines: string[][]) {
+  getCompletedLines(lines: string[][], player: PlayerColor): Set<string> {
+    const completed = new Set<string>();
+    for (const line of lines) {
+      if (line.every(nid => this.board.get(nid) === player)) completed.add(line.join('|'));
+    }
+    return completed;
+  }
+
+  checkNewFormations(nodeId: string, player: PlayerColor, lines: string[][], previousCompleted?: Set<string>) {
     const formed: string[] = [];
     for (const line of lines) {
       if (!line.includes(nodeId)) continue;
-      if (line.every(nid => this.board.get(nid) === player)) formed.push(line.join('|'));
+      const key = line.join('|');
+      if (line.every(nid => this.board.get(nid) === player)) {
+        if (!previousCompleted || !previousCompleted.has(key)) formed.push(key);
+      }
     }
     return formed;
   }
@@ -291,7 +308,15 @@ export class DragonPhoenixGame {
       }
     } else {
       this.eatMode = 'single'; this.eatFirstTarget = null;
-      if (!this.canEatAny(this.currentPlayer, this.eatType)) { this.eatCount--; this.advanceEatPhase(); }
+      if (!this.canEatAny(this.currentPlayer, this.eatType)) {
+        // Phoenix can't eat - check if there are dragon lines to eat
+        if (this.eatType === 'phoenix' && this.lastFormedDragons.length > 0 && this.canEatAny(this.currentPlayer, 'dragon')) {
+          this.eatType = 'dragon';
+        } else {
+          this.eatCount--;
+          this.advanceEatPhase();
+        }
+      }
     }
   }
 
@@ -327,7 +352,7 @@ export class DragonPhoenixGame {
     const isDragon = this.mode === 'dragon';
     this.nodes = isDragon ? [...DRAGON_NODES] : [...PHOENIX_NODES];
     this.edges = isDragon ? [...DRAGON_EDGES] : [...PHOENIX_EDGES];
-    this.dragonLines = [...DRAGON_LINES];
+    this.dragonLines = isDragon ? [...DRAGON_LINES] : [...PHOENIX_DRAGON_LINES];
     this.phoenixLines = isDragon ? [] : [...PHOENIX_LINES];
     this.adj = isDragon ? DRAGON_ADJ : PHOENIX_ADJ;
   }

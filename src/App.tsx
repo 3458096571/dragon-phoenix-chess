@@ -48,6 +48,11 @@ export default function App() {
     gameRef.current = game;
   }, [game]);
 
+  // Cleanup flash timer on unmount
+  useEffect(() => {
+    return () => clearTimeout(flashTimer.current);
+  }, []);
+
   // Audio context
   const audioCtx = useRef<AudioContext | null>(null);
   const initAudio = useCallback(() => {
@@ -167,6 +172,14 @@ export default function App() {
         if (currentGame.getPhase() === 'eating') {
           setTimeout(() => runAIMoveRef(currentGame, difficulty), 600);
         }
+      } else if (currentGame.getPhase() === 'eating' && move.nodeId && move.toNodeId) {
+        // Phoenix double-eat: first target, then second target
+        currentGame.handleNodeClick(move.nodeId);
+        const result = currentGame.handleNodeClick(move.toNodeId);
+        handleGameResultRef(result, currentGame);
+        if (currentGame.getPhase() === 'eating') {
+          setTimeout(() => runAIMoveRef(currentGame, difficulty), 600);
+        }
       }
     } catch (err) {
       console.error('AI move error:', err);
@@ -222,9 +235,6 @@ export default function App() {
 
     // AI模式下，玩家走完后轮到AI
     if (screen === 'ai-game' && !result.gameOver && currentGame.getPhase() !== 'eating') {
-      if (currentGame.getPhase() === 'eating') {
-        return;
-      }
       setTimeout(() => runAIMoveRef(currentGame, aiDifficulty), 600);
     }
   }, [screen, aiDifficulty, initAudio, handleGameResultRef, runAIMoveRef]);
@@ -310,9 +320,7 @@ export default function App() {
   // AI吃子阶段自动处理
   useEffect(() => {
     if (screen === 'ai-game' && game.getPhase() === 'eating' && game.getCurrentPlayer() !== playerSide && !aiThinking) {
-      const nextGame = new DragonPhoenixGame(game.mode);
-      nextGame.loadState(game.getState());
-      setTimeout(() => runAIMoveRef(nextGame, aiDifficulty), 600);
+      setTimeout(() => runAIMoveRef(gameRef.current, aiDifficulty), 600);
     }
   }, [game, screen, playerSide, aiThinking, aiDifficulty, runAIMoveRef]);
 
