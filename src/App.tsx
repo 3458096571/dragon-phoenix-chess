@@ -266,6 +266,26 @@ export default function App() {
     setAiChatLoading(true);
 
     try {
+      // 构建当前棋局状态描述
+      const g = gameRef.current;
+      const boardDesc = g.getBoardDesc();
+      const phaseText = g.getPhase() === 'placing' ? '放子阶段' : g.getPhase() === 'moving' ? '移子阶段' : g.getPhase() === 'eating' ? '吃子阶段' : '游戏结束';
+      const currentPlayerText = g.getCurrentPlayer() === 'red' ? '粉方' : '蓝方';
+      const aiSideText = playerSide === 'red' ? '粉方' : '蓝方';
+      const handRed = g.getHandCount('red');
+      const handBlue = g.getHandCount('blue');
+      const onBoardRed = g.getOnBoardCount('red');
+      const onBoardBlue = g.getOnBoardCount('blue');
+
+      const gameContext = `当前棋局状态：
+- 模式：${g.mode === 'dragon' ? '龙棋' : '凤棋'}
+- 阶段：${phaseText}
+- 当前回合：${currentPlayerText}
+- 你是${aiSideText}（AI对手）
+- 粉方：手牌${handRed} + 场上${onBoardRed}
+- 蓝方：手牌${handBlue} + 场上${onBoardBlue}
+- 棋盘：${boardDesc}`;
+
       const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -277,16 +297,15 @@ export default function App() {
           messages: [
             {
               role: 'system',
-              content: '你是一个龙凤棋AI对手，性格活泼俏皮，喜欢用中文简短回复（不超过50字），可以嘲讽、鼓励或调侃玩家。',
+              content: `你是一个龙凤棋AI对手。规则：龙棋9子24节点，横竖3子成龙吃1子；凤棋12子32节点，横竖对角3子成龙吃1子，4子成凤吃2子。凤子>龙子>普通子。\n\n你的任务：\n1. 根据当前棋局状态给出正经、有策略性的回复\n2. 可以分析局势、给出建议、或回应玩家的嘲讽\n3. 回复要简洁（不超过60字），但要专业有深度\n4. 不要卖萌或过度活泼，像一个认真的棋友\n5. 如果玩家问棋局相关的问题，结合当前局势回答`,
             },
-            ...aiMessages.map(m => ({
-              role: m.role === 'user' ? 'user' as const : 'assistant' as const,
-              content: m.text,
-            })),
-            { role: 'user', content: userText },
+            {
+              role: 'user',
+              content: `${gameContext}\n\n玩家说："${userText}"\n\n请回复：`,
+            },
           ],
-          temperature: 0.9,
-          max_tokens: 128,
+          temperature: 0.7,
+          max_tokens: 150,
         }),
       });
       if (!response.ok) throw new Error(`API ${response.status}`);
@@ -297,11 +316,11 @@ export default function App() {
       setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime }]);
     } catch (err) {
       console.error('AI chat error:', err);
-      setAiMessages(prev => [...prev, { role: 'ai', text: 'AI 暂时离线了，稍后再聊吧~', time: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}` }]);
+      setAiMessages(prev => [...prev, { role: 'ai', text: '网络有点卡，稍后再聊~', time: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}` }]);
     } finally {
       setAiChatLoading(false);
     }
-  }, [chatInput, aiMessages]);
+  }, [chatInput, playerSide]);
 
   // 同步游戏状态到UI
   useEffect(() => {

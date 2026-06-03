@@ -370,4 +370,17 @@ export class DragonPhoenixGame {
     if (this.phase === 'moving' && this.selectedNode) return `${pName}移动 - 选择目标位置`;
     return `${pName}回合 - ${this.phase === 'placing' ? '落子' : '移动'}`;
   }
+
+  // 获取棋盘描述（用于AI聊天上下文）
+  getBoardDesc(): string {
+    const pieces: string[] = [];
+    for (const [node, player] of this.board.entries()) {
+      if (player) {
+        const protection = this.getProtectionLevel(node);
+        const protText = protection === 'phoenix' ? '凤' : protection === 'dragon' ? '龙' : '';
+        pieces.push(`${node}=${player === 'red' ? '粉' : '蓝'}${protText}`);
+      }
+    }
+    return pieces.length > 0 ? pieces.join(', ') : '空棋盘';
+  }
 }
