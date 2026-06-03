@@ -58,68 +58,127 @@ export const PHOENIX_EDGES: [string, string][] = [
   ['1,-1','2,-2'], ['2,-2','3,-3'], ['3,-3','4,-4'],
 ];
 
-// 凤棋成龙线（三子成线）——包含所有横竖直线和对角线
-export const PHOENIX_DRAGON_LINES: string[][] = [
-  // === 横向直线 ===
-  // y=1 行
-  ['-1,1','0,1','1,1'],
-  // y=2 行
-  ['-2,2','0,2','2,2'],
-  // y=3 行
-  ['-3,3','0,3','3,3'],
-  // y=4 行
-  ['-4,4','0,4','4,4'],
-  // y=-1 行
-  ['-1,-1','0,-1','1,-1'],
-  // y=-2 行
-  ['-2,-2','0,-2','2,-2'],
-  // y=-3 行
-  ['-3,-3','0,-3','3,-3'],
-  // y=-4 行
-  ['-4,-4','0,-4','4,-4'],
+// 辅助函数：从节点集合生成所有"连续相邻"的三子直线
+// 三个节点必须在同一条几何直线上，且是等间距连续排列（中间无其他节点）
+function generateAdjacentLines(nodes: string[]): string[][] {
+  const nodeSet = new Set(nodes);
+  const lines: string[][] = [];
+  const lineKeys = new Set<string>();
 
-  // === 纵向直线 ===
-  // x=1 列
-  ['1,-1','1,0','1,1'],
-  // x=2 列
-  ['2,-2','2,0','2,2'],
-  // x=3 列
-  ['3,-3','3,0','3,3'],
-  // x=4 列
-  ['4,-4','4,0','4,4'],
-  // x=-1 列
-  ['-1,-1','-1,0','-1,1'],
-  // x=-2 列
-  ['-2,-2','-2,0','-2,2'],
-  // x=-3 列
-  ['-3,-3','-3,0','-3,3'],
-  // x=-4 列
-  ['-4,-4','-4,0','-4,4'],
+  function addLine(a: string, b: string, c: string) {
+    if (!nodeSet.has(a) || !nodeSet.has(b) || !nodeSet.has(c)) return;
+    const key = [a, b, c].sort().join('|');
+    if (lineKeys.has(key)) return;
+    lineKeys.add(key);
+    lines.push([a, b, c]);
+  }
 
-  // === 中心辐射对角线（穿过0,0） ===
-  // 右上-左下（斜率1）
-  ['-4,-4','-3,-3','-2,-2'], ['-3,-3','-2,-2','-1,-1'], ['-2,-2','-1,-1','0,0'], ['-1,-1','0,0','1,1'], ['0,0','1,1','2,2'], ['1,1','2,2','3,3'], ['2,2','3,3','4,4'],
-  // 左上-右下（斜率-1）
-  ['-4,4','-3,3','-2,2'], ['-3,3','-2,2','-1,1'], ['-2,2','-1,1','0,0'], ['-1,1','0,0','1,-1'], ['0,0','1,-1','2,-2'], ['1,-1','2,-2','3,-3'], ['2,-2','3,-3','4,-4'],
+  // 对于每个节点，作为中间点，向4个方向找等间距连续的两个邻居
+  const directions = [
+    [1, 0], [0, 1], [1, 1], [1, -1],
+  ];
 
-  // === 非中心对角线（不穿过0,0） ===
-  // 右上方向，y=x+1
-  ['-3,4','-2,3','-1,2'], ['-2,3','-1,2','0,1'], ['-1,2','0,1','1,0'], ['0,1','1,0','2,-1'], ['1,0','2,-1','3,-2'], ['2,-1','3,-2','4,-3'],
-  // 右下方向，y=-x+1
-  ['-3,-4','-2,-3','-1,-2'], ['-2,-3','-1,-2','0,-1'], ['-1,-2','0,-1','1,0'], ['0,-1','1,0','2,1'], ['1,0','2,1','3,2'], ['2,1','3,2','4,3'],
-  // 左上方向，y=x-1
-  ['-4,3','-3,2','-2,1'], ['-3,2','-2,1','-1,0'], ['-2,1','-1,0','0,-1'], ['-1,0','0,-1','1,-2'], ['0,-1','1,-2','2,-3'], ['1,-2','2,-3','3,-4'],
-  // 左下方向，y=-x-1
-  ['-4,-3','-3,-2','-2,-1'], ['-3,-2','-2,-1','-1,0'], ['-2,-1','-1,0','0,1'], ['-1,0','0,1','1,2'], ['0,1','1,2','2,3'], ['1,2','2,3','3,4'],
-];
+  for (const nid of nodes) {
+    const [cx, cy] = nid.split(',').map(Number);
+    for (const [dx, dy] of directions) {
+      // 收集该直线上所有节点（包括正反两个方向），按坐标排序
+      const collinear: { x: number; y: number; node: string }[] = [];
+      for (const other of nodes) {
+        if (other === nid) continue;
+        const [ox, oy] = other.split(',').map(Number);
+        const px = ox - cx, py = oy - cy;
+        // 检查是否在同一条直线上（方向向量叉积为0）
+        if (px * dy === py * dx) {
+          collinear.push({ x: ox, y: oy, node: other });
+        }
+      }
+      // 加入当前节点，按在该方向上的投影排序
+      collinear.push({ x: cx, y: cy, node: nid });
+      collinear.sort((a, b) => {
+        // 按方向向量投影排序
+        const projA = a.x * dx + a.y * dy;
+        const projB = b.x * dx + b.y * dy;
+        return projA - projB;
+      });
 
-// 凤棋成凤线（四子成线）
-export const PHOENIX_LINES: string[][] = [
-  ['0,1','0,2','0,3','0,4'], ['0,-1','0,-2','0,-3','0,-4'],
-  ['-1,0','-2,0','-3,0','-4,0'], ['1,0','2,0','3,0','4,0'],
-  ['1,1','2,2','3,3','4,4'], ['-1,1','-2,2','-3,3','-4,4'],
-  ['-1,-1','-2,-2','-3,-3','-4,-4'], ['1,-1','2,-2','3,-3','4,-4'],
-];
+      // 找连续等间距的三元组
+      for (let i = 0; i < collinear.length - 2; i++) {
+        const a = collinear[i];
+        const b = collinear[i + 1];
+        const c = collinear[i + 2];
+        // 检查是否等间距：b - a === c - b
+        const stepX1 = b.x - a.x;
+        const stepY1 = b.y - a.y;
+        const stepX2 = c.x - b.x;
+        const stepY2 = c.y - b.y;
+        if (stepX1 === stepX2 && stepY1 === stepY2) {
+          addLine(a.node, b.node, c.node);
+        }
+      }
+    }
+  }
+
+  return lines;
+}
+
+// 辅助函数：从节点集合生成所有"连续相邻"的四子直线
+function generateAdjacentFourLines(nodes: string[]): string[][] {
+  const nodeSet = new Set(nodes);
+  const lines: string[][] = [];
+  const lineKeys = new Set<string>();
+
+  function addLine(a: string, b: string, c: string, d: string) {
+    if (!nodeSet.has(a) || !nodeSet.has(b) || !nodeSet.has(c) || !nodeSet.has(d)) return;
+    const key = [a, b, c, d].sort().join('|');
+    if (lineKeys.has(key)) return;
+    lineKeys.add(key);
+    lines.push([a, b, c, d]);
+  }
+
+  const directions = [
+    [1, 0], [0, 1], [1, 1], [1, -1],
+  ];
+
+  for (const nid of nodes) {
+    const [cx, cy] = nid.split(',').map(Number);
+    for (const [dx, dy] of directions) {
+      // 收集该直线上所有节点，按方向投影排序
+      const collinear: { x: number; y: number; node: string }[] = [];
+      for (const other of nodes) {
+        if (other === nid) continue;
+        const [ox, oy] = other.split(',').map(Number);
+        const px = ox - cx, py = oy - cy;
+        if (px * dy === py * dx) {
+          collinear.push({ x: ox, y: oy, node: other });
+        }
+      }
+      collinear.push({ x: cx, y: cy, node: nid });
+      collinear.sort((a, b) => (a.x * dx + a.y * dy) - (b.x * dx + b.y * dy));
+
+      // 找连续等间距的四元组
+      for (let i = 0; i < collinear.length - 3; i++) {
+        const a = collinear[i];
+        const b = collinear[i + 1];
+        const c = collinear[i + 2];
+        const d = collinear[i + 3];
+        const stepX1 = b.x - a.x, stepY1 = b.y - a.y;
+        const stepX2 = c.x - b.x, stepY2 = c.y - b.y;
+        const stepX3 = d.x - c.x, stepY3 = d.y - c.y;
+        if (stepX1 === stepX2 && stepY1 === stepY2 && stepX2 === stepX3 && stepY2 === stepY3) {
+          addLine(a.node, b.node, c.node, d.node);
+        }
+      }
+    }
+  }
+
+  return lines;
+}
+
+// 凤棋成龙线（三子成线）——自动生成所有相邻的三子直线
+export const PHOENIX_DRAGON_LINES: string[][] = generateAdjacentLines(PHOENIX_NODES);
+
+// 凤棋成凤线（四子成线）——自动生成所有相邻的四子直线
+export const PHOENIX_LINES: string[][] = generateAdjacentFourLines(PHOENIX_NODES);
 
 export function buildAdjacency(edges: [string, string][]): Record<string, string[]> {
   const adj: Record<string, string[]> = {};
