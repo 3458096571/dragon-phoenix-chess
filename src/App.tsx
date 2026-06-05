@@ -24,6 +24,32 @@ interface AIMessage {
   time: string;
 }
 
+// 从 reasoning_content 中提取最终回复
+function extractReplyFromReasoning(reasoning: string): string {
+  if (!reasoning) return '';
+  // 1. 尝试提取 "回复：" 或 "最终回复：" 后面的内容
+  const replyMatch = reasoning.match(/(?:回复|最终回复|回答|最终回答)[：:]\s*([^\n]+)/);
+  if (replyMatch) {
+    return replyMatch[1].trim();
+  }
+  // 2. 尝试提取 "选择" 后面的内容
+  const choiceMatch = reasoning.match(/选择[：:]\s*([^\n]+)/);
+  if (choiceMatch) {
+    return choiceMatch[1].trim();
+  }
+  // 3. 取最后一行非空内容
+  const lines = reasoning.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length > 0) {
+    const lastLine = lines[lines.length - 1];
+    // 如果最后一行很短（小于10字）且前面还有内容，尝试合并最后两行
+    if (lastLine.length < 10 && lines.length > 1) {
+      return lines.slice(-2).join('，');
+    }
+    return lastLine;
+  }
+  return reasoning.trim();
+}
+
 export default function App() {
   const [screen, setScreen] = useState<Screen>('menu');
   const [gameMode, setGameMode] = useState<GameMode>('dragon');
@@ -311,7 +337,24 @@ export default function App() {
       if (!response.ok) throw new Error(`API ${response.status}`);
       const data = await response.json();
       const msg = data.choices?.[0]?.message;
-      const aiText = msg?.content || msg?.reasoning_content || '……';
+      let aiText = msg?.content || '';
+      // 优先使用 content，如果为空则尝试 reasoning_content
+      if (!aiText && msg?.reasoning_content) {
+        aiText = extractReplyFromReasoning(msg.reasoning_content);
+      }
+      // 如果 content 看起来像思考过程（包含 <think> 标签或大量分析性文字），尝试提取
+      if (aiText && (aiText.includes('<think>') || aiText.includes('</think>') || aiText.includes('思考过程'))) {
+        const thinkMatch = aiText.match(/<think>[\s\S]*?<\/think>/);
+        if (thinkMatch) {
+          // 移除 think 标签内容，取剩余部分
+          aiText = aiText.replace(/<think>[\s\S]*?<\/think>/, '').trim();
+        }
+        // 如果移除后为空，尝试从 reasoning_content 提取
+        if (!aiText && msg?.reasoning_content) {
+          aiText = extractReplyFromReasoning(msg.reasoning_content);
+        }
+      }
+      if (!aiText) aiText = '……';
       const aiTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
       setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime }]);
     } catch (err) {

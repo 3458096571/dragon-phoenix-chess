@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react';
 import { useOnlineGame, type MoveData } from '@/hooks/useOnlineGame';
 import { ChessBoard } from '@/components/ChessBoard';
 import { DragonPhoenixGame } from '@/lib/game-engine';
@@ -25,10 +25,53 @@ import {
 import type { GameMode } from '@/lib/supabase-types';
 
 // ============================
+// 错误边界组件
+// ============================
+
+class OnlineGameErrorBoundary extends React.Component<{ children: ReactNode; onReset?: () => void }, { hasError: boolean; error: Error | null }> {
+  constructor(props: { children: ReactNode; onReset?: () => void }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[OnlineGameErrorBoundary] 捕获到错误:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#0a0a14] text-white flex flex-col items-center justify-center px-4">
+          <div className="text-center max-w-sm">
+            <AlertCircle className="w-12 h-12 text-red-400 mx-auto mb-4" />
+            <h2 className="text-xl font-bold text-red-400 mb-2">在线对战出错了</h2>
+            <p className="text-white/60 text-sm mb-4">{this.state.error?.message || '未知错误'}</p>
+            <Button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                this.props.onReset?.();
+              }}
+              className="bg-[#d4a853] text-black hover:bg-[#f0d78c]"
+            >
+              重试
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================
 // 在线对战主组件
 // ============================
 
-export default function OnlineGame() {
+function OnlineGameInner() {
   const [playerName, setPlayerName] = useState('');
   const [roomCodeInput, setRoomCodeInput] = useState('');
   const [screen, setScreen] = useState<'lobby' | 'waiting' | 'game'>('lobby');
@@ -58,6 +101,17 @@ export default function OnlineGame() {
     sendChat,
     leaveRoom,
   } = useOnlineGame(playerName);
+
+  // 调试日志：追踪组件渲染和关键状态
+  useEffect(() => {
+    console.log('[OnlineGame] 渲染 - screen:', screen, 'room:', !!room, 'gameState:', !!gameState, 'playerColor:', playerColor, 'error:', error);
+  });
+
+  useEffect(() => {
+    if (error) {
+      console.error('[OnlineGame] useOnlineGame 报错:', error);
+    }
+  }, [error]);
 
   // ============================
   // 本地游戏引擎（用于 ChessBoard 渲染）
@@ -568,11 +622,11 @@ export default function OnlineGame() {
   }
 
   // ============================
-  // 渲染：游戏画面
-  // ============================
+// 渲染：游戏画面
+// ============================
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden flex flex-col items-center h-screen py-3 px-2">
+    <div className="min-h-screen bg-[#0a0a14] text-white relative overflow-hidden flex flex-col items-center justify-start h-screen py-3 px-2">
       {/* 顶部栏 */}
       <div className="w-full max-w-lg flex items-center justify-between mb-2 shrink-0">
         <Button
@@ -644,7 +698,7 @@ export default function OnlineGame() {
       {/* 聊天切换按钮 */}
       <button
         onClick={() => setChatOpen(!chatOpen)}
-        className="shrink-0 z-40 w-12 h-12 rounded-full bg-[#d4a853]/20 border border-[#d4a853]/40 flex items-center justify-center hover:bg-[#d4a853]/30 transition-colors mt-2"
+        className="shrink-0 z-40 w-12 h-12 rounded-full bg-[#d4a853]/20 border border-[#d4a853]/40 flex items-center justify-center hover:bg-[#d4a853]/30 transition-colors mt-2 relative"
       >
         {chatOpen ? (
           <X className="w-5 h-5 text-[#d4a853]" />
@@ -761,5 +815,13 @@ export default function OnlineGame() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function OnlineGame() {
+  return (
+    <OnlineGameErrorBoundary>
+      <OnlineGameInner />
+    </OnlineGameErrorBoundary>
   );
 }

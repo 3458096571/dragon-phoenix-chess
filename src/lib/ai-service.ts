@@ -8,6 +8,32 @@ function getRandomItem<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
+// 从 reasoning_content 中提取最终回复
+function extractReplyFromReasoning(reasoning: string): string {
+  if (!reasoning) return '';
+  // 1. 尝试提取 "回复：" 或 "最终回复：" 后面的内容
+  const replyMatch = reasoning.match(/(?:回复|最终回复|回答|最终回答)[：:]\s*([^\n]+)/);
+  if (replyMatch) {
+    return replyMatch[1].trim();
+  }
+  // 2. 尝试提取 "选择" 后面的内容
+  const choiceMatch = reasoning.match(/选择[：:]\s*([^\n]+)/);
+  if (choiceMatch) {
+    return choiceMatch[1].trim();
+  }
+  // 3. 取最后一行非空内容
+  const lines = reasoning.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length > 0) {
+    const lastLine = lines[lines.length - 1];
+    // 如果最后一行很短（小于10字）且前面还有内容，尝试合并最后两行
+    if (lastLine.length < 10 && lines.length > 1) {
+      return lines.slice(-2).join('，');
+    }
+    return lastLine;
+  }
+  return reasoning.trim();
+}
+
 function getRandomValidMove(game: DragonPhoenixGame): { nodeId: string; toNodeId?: string } | null {
   const phase = game.getPhase();
   const player = game.getCurrentPlayer();
@@ -233,7 +259,12 @@ async function callChatCompletion(prompt: string, difficulty: 'easy' | 'medium' 
 
   const data = await response.json();
   const msg = data.choices?.[0]?.message;
-  return msg?.content || msg?.reasoning_content || '';
+  let text = msg?.content || '';
+  // 如果 content 为空但 reasoning_content 存在，从 reasoning_content 提取最终回复
+  if (!text && msg?.reasoning_content) {
+    text = extractReplyFromReasoning(msg.reasoning_content);
+  }
+  return text;
 }
 
 export async function getAIMove(
