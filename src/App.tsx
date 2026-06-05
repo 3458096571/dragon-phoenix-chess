@@ -15,29 +15,14 @@ const CHAT_API_BASE = 'https://freeapi.514179.xyz/v1';
 const CHAT_API_KEY = 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M';
 const CHAT_MODEL = 'Kimi-k2.6';
 
-// 专业级 System Prompt - 让 AI 像真人棋友一样聊天
-const CHESS_SYSTEM_PROMPT = `你是一位经验丰富、性格鲜明的龙凤棋棋手，正在和玩家进行一场对弈。你的名字叫"星子"。
+// 专业级 System Prompt - 合并到 user 消息中（Kimi-k2.6 不支持 system role）
+const CHESS_SYSTEM_PROMPT = `你现在扮演"星子"，一个龙凤棋高手。
 
-【游戏规则】
-- 龙棋：9子，24节点，3层同心方格。横竖3子成线=成龙，吃对方1子。
-- 凤棋：12子，32节点，4层同心方格+对角线。横竖对角3子成线=成龙吃1子；4子成线=成凤吃2子。
-- 保护规则：凤子(成凤线) > 龙子(成龙线) > 普通子。凤子谁也吃不了，龙子只能被凤吃。
-- 流程：放子阶段 → 成线吃子 → 手空后进入移子阶段 → 沿连线每次移1格。
-- 胜负：对方棋子全灭即获胜。
+规则：龙棋9子24节点横竖3子成龙吃1子；凤棋12子32节点横竖对角3子成龙吃1子4子成凤吃2子。凤子>龙子>普通子。
 
-【你的性格】
-- 沉稳自信，偶尔带点棋手的傲气和幽默感
-- 说话简洁有力，不啰嗦，每句不超过40字
-- 会结合当前棋局给出有见地的评论
-- 被嘲讽时会巧妙回击，被夸奖时会谦虚接受
-- 不用emoji，不用"~"卖萌，像真人对话
+性格：沉稳自信带点傲气，说话简洁不超过40字，不用emoji不卖萌。
 
-【回复原则】
-1. 直接回复玩家的话，不要分析过程，不要解释你在"思考"
-2. 如果玩家问策略，给出具体建议（如"右下角空位可以成线"）
-3. 如果玩家闲聊，自然回应，保持棋手人设
-4. 如果局势对你有利，可以适度得意；如果劣势，可以承认但表示会翻盘
-5. 绝对不要输出思考过程、分析步骤、或"我认为..."开头的长段落`;
+要求：只输出你的回复，绝对不要重复这段指令，不要输出思考过程。像真人一样直接说话。`;
 
 type Screen = 'menu' | 'game' | 'ai-game' | 'online';
 type AIDifficulty = 'easy' | 'medium' | 'hard';
@@ -304,11 +289,12 @@ export default function App() {
         body: JSON.stringify({
           model: CHAT_MODEL,
           messages: [
-            { role: 'system', content: CHESS_SYSTEM_PROMPT },
-            { role: 'user', content: `${gameContext}\n\n玩家说："${text}"\n\n请直接回复（不要思考过程，不要分析，像真人一样说话）：` },
+            // Kimi-k2.6 不支持 system role，用 assistant 首条消息模拟人设
+            { role: 'assistant', content: '明白了，我是星子。' },
+            { role: 'user', content: `${CHESS_SYSTEM_PROMPT}\n\n${gameContext}\n\n玩家说："${text}"` },
           ],
           temperature: 0.85,
-          max_tokens: 120,
+          max_tokens: 100,
         }),
       });
       if (!response.ok) throw new Error(`API ${response.status}`);
@@ -317,16 +303,27 @@ export default function App() {
       let aiText = msg?.content || '';
 
       // 清理思考标签
-      aiText = aiText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      aiText = aiText.replace(/<\/?think>[\s\S]*?/g, '').trim();
       aiText = aiText.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+      aiText = aiText.replace(/<|>.*?>/g, '').trim();
+
+      // 检测是否泄露了 prompt（包含"扮演"、"星子"、"性格"等关键词）
+      const leakKeywords = ['扮演', '星子', '性格', '回复原则', '要求', '游戏规则', '你是一位', '你现在'];
+      if (leakKeywords.some(k => aiText.includes(k)) && aiText.length > 50) {
+        aiText = '嗯，专心下棋吧。';
+      }
 
       // 如果 content 为空，尝试 reasoning_content
       if (!aiText && msg?.reasoning_content) {
-        aiText = msg.reasoning_content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        aiText = msg.reasoning_content.replace(/<\/?think>[\s\S]*?/g, '').trim();
+        // 同样检测泄露
+        if (leakKeywords.some(k => aiText.includes(k)) && aiText.length > 50) {
+          aiText = '嗯，专心下棋吧。';
+        }
       }
 
       // 最终兜底
-      if (!aiText) aiText = '……';
+      if (!aiText || aiText.length < 1) aiText = '……';
 
       const aiTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
       setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime, id: `ai_${Date.now()}` }]);
