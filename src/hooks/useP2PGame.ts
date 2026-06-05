@@ -153,11 +153,36 @@ export function useP2PGame(playerName: string) {
   // 初始化 Peer
   const initPeer = useCallback((id?: string) => {
     return new Promise<Peer>((resolve, reject) => {
-      const p = id ? new Peer(id) : new Peer();
+      let resolved = false;
+      let rejected = false;
+
+      const peerOpts: { config?: { iceServers?: Array<{ urls: string }> } } = {};
+      // 使用 Google STUN 服务器，提高 NAT 穿透成功率
+      peerOpts.config = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ],
+      };
+
+      const p = id ? new Peer(id, peerOpts) : new Peer(peerOpts);
       peerRef.current = p;
       setPeerStatus('connecting');
 
+      // 10秒超时
+      const timer = setTimeout(() => {
+        if (!resolved && !rejected) {
+          rejected = true;
+          setPeerStatus('error');
+          try { p.destroy(); } catch (_) {}
+          reject(new Error('连接信令服务器超时，请检查网络'));
+        }
+      }, 10000);
+
       p.on('open', (peerId) => {
+        if (resolved || rejected) return;
+        resolved = true;
+        clearTimeout(timer);
         setMyPeerId(peerId);
         setPeerStatus('connected');
         resolve(p);
@@ -165,17 +190,32 @@ export function useP2PGame(playerName: string) {
 
       p.on('error', (err) => {
         console.error('Peer error:', err);
+        if (rejected) return;
+        rejected = true;
+        clearTimeout(timer);
         setPeerStatus('error');
         if (err.type === 'unavailable-id') {
           // ID 已被占用，重新生成
-          const newP = new Peer();
-            peerRef.current = newP;
-            newP.on('open', () => {
+          const newP = new Peer(peerOpts);
+          peerRef.current = newP;
+          const timer2 = setTimeout(() => {
+            if (!resolved) {
+              setPeerStatus('error');
+              try { newP.destroy(); } catch (_) {}
+              reject(new Error('连接超时'));
+            }
+          }, 10000);
+          newP.on('open', () => {
+            if (resolved) return;
+            resolved = true;
+            clearTimeout(timer2);
             setMyPeerId(newP.id);
             setPeerStatus('connected');
             resolve(newP);
           });
           newP.on('error', (e) => {
+            if (resolved) return;
+            clearTimeout(timer2);
             setPeerStatus('error');
             reject(e);
           });
@@ -187,14 +227,6 @@ export function useP2PGame(playerName: string) {
           reject(err);
         }
       });
-
-      // 超时处理
-      setTimeout(() => {
-        if (p.disconnected) {
-          setPeerStatus('error');
-          reject(new Error('连接超时'));
-        }
-      }, 15000);
     });
   }, []);
 
