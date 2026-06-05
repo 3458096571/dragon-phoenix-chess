@@ -294,7 +294,7 @@ export default function App() {
             { role: 'user', content: `${CHESS_SYSTEM_PROMPT}\n\n${gameContext}\n\n玩家说："${text}"` },
           ],
           temperature: 0.85,
-          max_tokens: 100,
+          max_tokens: 2000,
         }),
       });
       if (!response.ok) throw new Error(`API ${response.status}`);
@@ -302,24 +302,55 @@ export default function App() {
       const msg = data.choices?.[0]?.message;
       let aiText = msg?.content || '';
 
-      // 清理思考标签
-      aiText = aiText.replace(/<\/?think>[\s\S]*?/g, '').trim();
-      aiText = aiText.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
-      aiText = aiText.replace(/<|>.*?>/g, '').trim();
-
-      // 检测是否泄露了 prompt（包含"扮演"、"星子"、"性格"等关键词）
-      const leakKeywords = ['扮演', '星子', '性格', '回复原则', '要求', '游戏规则', '你是一位', '你现在'];
-      if (leakKeywords.some(k => aiText.includes(k)) && aiText.length > 50) {
-        aiText = '嗯，专心下棋吧。';
+      // Kimi-k2.6 的 content 始终是 null，回复全在 reasoning_content 里
+      // reasoning_content 格式通常是：分析过程...最后才是实际回复
+      if (!aiText && msg?.reasoning_content) {
+        const reasoning = msg.reasoning_content;
+        // 尝试多种提取方式
+        
+        // 方式1：找引号包裹的回复
+        const quoteMatch = reasoning.match(/[""「]([^""」]{2,40})[""」]/g);
+        if (quoteMatch && quoteMatch.length > 0) {
+          // 取最后一个引号内容
+          const lastQuote = quoteMatch[quoteMatch.length - 1];
+          aiText = lastQuote.replace(/[""「」]/g, '');
+        }
+        
+        // 方式2：找"选择："后面的内容
+        if (!aiText) {
+          const selectMatch = reasoning.match(/选择[：:""「]([^\n]{2,40})/);
+          if (selectMatch) aiText = selectMatch[1].trim();
+        }
+        
+        // 方式3：取 reasoning 最后几句（去掉明显的分析性文字）
+        if (!aiText) {
+          const lines = reasoning.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+          // 从后往前找第一句不像分析的（不含数字编号、不含"可能"、不含"考虑"等）
+          for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
+            const line = lines[i];
+            const isAnalysis = /^\d+[\.\、]/.test(line) || /^(可能|考虑|需要|既然|或者|如果)/.test(line) || line.includes('——') || line.length > 50;
+            if (!isAnalysis && line.length >= 2 && line.length <= 40) {
+              aiText = line;
+              break;
+            }
+          }
+        }
+        
+        // 方式4：最终兜底，取最后一句
+        if (!aiText) {
+          const lines = reasoning.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 0);
+          if (lines.length > 0) aiText = lines[lines.length - 1].slice(0, 40);
+        }
       }
 
-      // 如果 content 为空，尝试 reasoning_content
-      if (!aiText && msg?.reasoning_content) {
-        aiText = msg.reasoning_content.replace(/<\/?think>[\s\S]*?/g, '').trim();
-        // 同样检测泄露
-        if (leakKeywords.some(k => aiText.includes(k)) && aiText.length > 50) {
-          aiText = '嗯，专心下棋吧。';
-        }
+      // 清理思考标签（以防万一）
+      aiText = aiText.replace(/<\/?think>[\s\S]*?/g, '').trim();
+      aiText = aiText.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+
+      // 检测是否泄露了 prompt
+      const leakKeywords = ['扮演', '性格', '回复原则', '要求：', '游戏规则', '你是一位', '你现在'];
+      if (leakKeywords.some(k => aiText.includes(k)) && aiText.length > 50) {
+        aiText = '嗯，专心下棋吧。';
       }
 
       // 最终兜底
