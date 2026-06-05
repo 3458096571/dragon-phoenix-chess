@@ -4,51 +4,43 @@ import { ChessBoard } from '@/components/ChessBoard';
 import { ParticleBackground } from '@/components/ParticleBackground';
 import { getAIMove } from '@/lib/ai-service';
 import OnlineGame from '@/components/OnlineGame';
+import { AIChatPanel, type ChatMessage } from '@/components/AIChatPanel';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Card } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Input } from '@/components/ui/input';
-import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird, Bot, Globe, MessageSquare, Send, Loader2, X } from 'lucide-react';
+import { Volume2, VolumeX, HelpCircle, RotateCcw, Home, Swords, Bird, Bot, Globe, MessageSquare, X, Loader2 } from 'lucide-react';
 
 const CHAT_API_BASE = 'https://freeapi.514179.xyz/v1';
 const CHAT_API_KEY = 'sk-cfw-v2-vwSdrljilUkF2biw.neHjWCX6kW7wTuXLUXirK_EItQ5w-oew7ljOfoQtoy59G2DPwJVCcBKPIK4I6kwphBYjbAjxgzCQGOYlUaloz2dggYgkhvvlmDcyUtSI-_ZOU3pVzzJV8RMq3kH5iYWA8yPecMOkHBlm8PuCqLvsKVUyPdA3s6mDWi_iQVnt3rg2L79sUmPqOMmPQrymX2qv6wP6CyW6726K4F0RAhJw-gOoNZn511BCeKrASDnvMkijtc-fc90ieA9vz619W8eHLMCiBJO_jM2M';
 const CHAT_MODEL = 'Kimi-k2.6';
 
+// 专业级 System Prompt - 让 AI 像真人棋友一样聊天
+const CHESS_SYSTEM_PROMPT = `你是一位经验丰富、性格鲜明的龙凤棋棋手，正在和玩家进行一场对弈。你的名字叫"星子"。
+
+【游戏规则】
+- 龙棋：9子，24节点，3层同心方格。横竖3子成线=成龙，吃对方1子。
+- 凤棋：12子，32节点，4层同心方格+对角线。横竖对角3子成线=成龙吃1子；4子成线=成凤吃2子。
+- 保护规则：凤子(成凤线) > 龙子(成龙线) > 普通子。凤子谁也吃不了，龙子只能被凤吃。
+- 流程：放子阶段 → 成线吃子 → 手空后进入移子阶段 → 沿连线每次移1格。
+- 胜负：对方棋子全灭即获胜。
+
+【你的性格】
+- 沉稳自信，偶尔带点棋手的傲气和幽默感
+- 说话简洁有力，不啰嗦，每句不超过40字
+- 会结合当前棋局给出有见地的评论
+- 被嘲讽时会巧妙回击，被夸奖时会谦虚接受
+- 不用emoji，不用"~"卖萌，像真人对话
+
+【回复原则】
+1. 直接回复玩家的话，不要分析过程，不要解释你在"思考"
+2. 如果玩家问策略，给出具体建议（如"右下角空位可以成线"）
+3. 如果玩家闲聊，自然回应，保持棋手人设
+4. 如果局势对你有利，可以适度得意；如果劣势，可以承认但表示会翻盘
+5. 绝对不要输出思考过程、分析步骤、或"我认为..."开头的长段落`;
+
 type Screen = 'menu' | 'game' | 'ai-game' | 'online';
 type AIDifficulty = 'easy' | 'medium' | 'hard';
-
-interface AIMessage {
-  role: 'user' | 'ai';
-  text: string;
-  time: string;
-}
-
-// 从 reasoning_content 中提取最终回复
-function extractReplyFromReasoning(reasoning: string): string {
-  if (!reasoning) return '';
-  // 1. 尝试提取 "回复：" 或 "最终回复：" 后面的内容
-  const replyMatch = reasoning.match(/(?:回复|最终回复|回答|最终回答)[：:]\s*([^\n]+)/);
-  if (replyMatch) {
-    return replyMatch[1].trim();
-  }
-  // 2. 尝试提取 "选择" 后面的内容
-  const choiceMatch = reasoning.match(/选择[：:]\s*([^\n]+)/);
-  if (choiceMatch) {
-    return choiceMatch[1].trim();
-  }
-  // 3. 取最后一行非空内容
-  const lines = reasoning.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-  if (lines.length > 0) {
-    const lastLine = lines[lines.length - 1];
-    // 如果最后一行很短（小于10字）且前面还有内容，尝试合并最后两行
-    if (lastLine.length < 10 && lines.length > 1) {
-      return lines.slice(-2).join('，');
-    }
-    return lastLine;
-  }
-  return reasoning.trim();
-}
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('menu');
@@ -63,11 +55,9 @@ export default function App() {
   const [aiThinking, setAiThinking] = useState(false);
   const [playerSide, setPlayerSide] = useState<'red' | 'blue'>('red');
   const [chatOpen, setChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState('');
-  const [aiMessages, setAiMessages] = useState<AIMessage[]>([]);
+  const [aiMessages, setAiMessages] = useState<ChatMessage[]>([]);
   const [aiChatLoading, setAiChatLoading] = useState(false);
   const flashTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const chatEndRef = useRef<HTMLDivElement>(null);
   const gameRef = useRef<DragonPhoenixGame>(game);
 
   // Keep ref in sync
@@ -282,17 +272,14 @@ export default function App() {
     setAiThinking(false);
   }, []);
 
-  const sendChat = useCallback(async () => {
-    if (!chatInput.trim()) return;
+  const sendChat = useCallback(async (text: string) => {
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-    const userText = chatInput.trim();
-    setAiMessages(prev => [...prev, { role: 'user', text: userText, time }]);
-    setChatInput('');
+    const msgId = `msg_${Date.now()}`;
+    setAiMessages(prev => [...prev, { role: 'user', text, time, id: msgId }]);
     setAiChatLoading(true);
 
     try {
-      // 构建当前棋局状态描述
       const g = gameRef.current;
       const boardDesc = g.getBoardDesc();
       const phaseText = g.getPhase() === 'placing' ? '放子阶段' : g.getPhase() === 'moving' ? '移子阶段' : g.getPhase() === 'eating' ? '吃子阶段' : '游戏结束';
@@ -303,14 +290,10 @@ export default function App() {
       const onBoardRed = g.getOnBoardCount('red');
       const onBoardBlue = g.getOnBoardCount('blue');
 
-      const gameContext = `当前棋局状态：
-- 模式：${g.mode === 'dragon' ? '龙棋' : '凤棋'}
-- 阶段：${phaseText}
-- 当前回合：${currentPlayerText}
-- 你是${aiSideText}（AI对手）
-- 粉方：手牌${handRed} + 场上${onBoardRed}
-- 蓝方：手牌${handBlue} + 场上${onBoardBlue}
-- 棋盘：${boardDesc}`;
+      const gameContext = `【当前棋局】
+模式：${g.mode === 'dragon' ? '龙棋' : '凤棋'} | 阶段：${phaseText} | 回合：${currentPlayerText}
+你是${aiSideText} | 粉方：手牌${handRed}+场上${onBoardRed} | 蓝方：手牌${handBlue}+场上${onBoardBlue}
+棋盘：${boardDesc}`;
 
       const response = await fetch(`${CHAT_API_BASE}/chat/completions`, {
         method: 'POST',
@@ -321,49 +304,40 @@ export default function App() {
         body: JSON.stringify({
           model: CHAT_MODEL,
           messages: [
-            {
-              role: 'system',
-              content: `你是一个龙凤棋AI对手。规则：龙棋9子24节点，横竖3子成龙吃1子；凤棋12子32节点，横竖对角3子成龙吃1子，4子成凤吃2子。凤子>龙子>普通子。\n\n你的任务：\n1. 根据当前棋局状态给出正经、有策略性的回复\n2. 可以分析局势、给出建议、或回应玩家的嘲讽\n3. 回复要简洁（不超过60字），但要专业有深度\n4. 不要卖萌或过度活泼，像一个认真的棋友\n5. 如果玩家问棋局相关的问题，结合当前局势回答`,
-            },
-            {
-              role: 'user',
-              content: `${gameContext}\n\n玩家说："${userText}"\n\n请回复：`,
-            },
+            { role: 'system', content: CHESS_SYSTEM_PROMPT },
+            { role: 'user', content: `${gameContext}\n\n玩家说："${text}"\n\n请直接回复（不要思考过程，不要分析，像真人一样说话）：` },
           ],
-          temperature: 0.7,
-          max_tokens: 150,
+          temperature: 0.85,
+          max_tokens: 120,
         }),
       });
       if (!response.ok) throw new Error(`API ${response.status}`);
       const data = await response.json();
       const msg = data.choices?.[0]?.message;
       let aiText = msg?.content || '';
-      // 优先使用 content，如果为空则尝试 reasoning_content
+
+      // 清理思考标签
+      aiText = aiText.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      aiText = aiText.replace(/<thinking>[\s\S]*?<\/thinking>/g, '').trim();
+
+      // 如果 content 为空，尝试 reasoning_content
       if (!aiText && msg?.reasoning_content) {
-        aiText = extractReplyFromReasoning(msg.reasoning_content);
+        aiText = msg.reasoning_content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
       }
-      // 如果 content 看起来像思考过程（包含 <think> 标签或大量分析性文字），尝试提取
-      if (aiText && (aiText.includes('<think>') || aiText.includes('</think>') || aiText.includes('思考过程'))) {
-        const thinkMatch = aiText.match(/<think>[\s\S]*?<\/think>/);
-        if (thinkMatch) {
-          // 移除 think 标签内容，取剩余部分
-          aiText = aiText.replace(/<think>[\s\S]*?<\/think>/, '').trim();
-        }
-        // 如果移除后为空，尝试从 reasoning_content 提取
-        if (!aiText && msg?.reasoning_content) {
-          aiText = extractReplyFromReasoning(msg.reasoning_content);
-        }
-      }
+
+      // 最终兜底
       if (!aiText) aiText = '……';
+
       const aiTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
-      setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime }]);
+      setAiMessages(prev => [...prev, { role: 'ai', text: aiText, time: aiTime, id: `ai_${Date.now()}` }]);
     } catch (err) {
       console.error('AI chat error:', err);
-      setAiMessages(prev => [...prev, { role: 'ai', text: '网络有点卡，稍后再聊~', time: `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}` }]);
+      const errTime = `${new Date().getHours().toString().padStart(2, '0')}:${new Date().getMinutes().toString().padStart(2, '0')}`;
+      setAiMessages(prev => [...prev, { role: 'ai', text: '网络有点卡，稍后再聊。', time: errTime, id: `err_${Date.now()}` }]);
     } finally {
       setAiChatLoading(false);
     }
-  }, [chatInput, playerSide]);
+  }, [playerSide]);
 
   // 同步游戏状态到UI
   useEffect(() => {
@@ -376,10 +350,7 @@ export default function App() {
     }
   }, [game.phase, game.currentPlayer, game.eatType, game.eatCount, game]);
 
-  // 聊天自动滚动
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [aiMessages, aiChatLoading]);
+
 
   // AI吃子阶段自动处理
   useEffect(() => {
@@ -546,52 +517,15 @@ export default function App() {
             {chatOpen ? <X className="w-5 h-5 text-[#d4a853]" /> : <MessageSquare className="w-5 h-5 text-[#d4a853]" />}
           </button>
 
-          {/* iOS-style Chat panel */}
+          {/* AI Chat Panel */}
           {chatOpen && (
             <div className="shrink-0 w-full max-w-lg mt-2 bg-[#0f0f1a]/95 border border-[#d4a853]/30 rounded-t-xl backdrop-blur-sm flex flex-col overflow-hidden shadow-[0_0_30px_rgba(0,0,0,0.5)] h-[45vh] md:h-80">
-              <div className="p-3 border-b border-[#d4a853]/20 flex items-center justify-between shrink-0">
-                <span className="text-sm font-medium text-[#d4a853]">对局聊天</span>
-                <button onClick={() => setChatOpen(false)} className="text-white/40 hover:text-white/70">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                {aiMessages.length === 0 && (
-                  <p className="text-xs text-white/30 text-center py-4">暂无消息，开始和 AI 聊天吧~</p>
-                )}
-                {aiMessages.map((msg, i) => (
-                  <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] px-3 py-2 rounded-2xl text-sm ${
-                      msg.role === 'user'
-                        ? 'bg-[#d4a853] text-black rounded-br-md'
-                        : 'bg-[#2a2a3e] text-white rounded-bl-md'
-                    }`}>
-                      {msg.text}
-                    </div>
-                  </div>
-                ))}
-                {aiChatLoading && (
-                  <div className="flex justify-start">
-                    <div className="bg-[#2a2a3e] text-white rounded-2xl rounded-bl-md px-3 py-2 text-sm flex items-center gap-2">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span className="text-white/60">AI 正在输入...</span>
-                    </div>
-                  </div>
-                )}
-                <div ref={chatEndRef} />
-              </div>
-              <div className="p-2 border-t border-[#d4a853]/20 flex gap-2 shrink-0">
-                <Input
-                  value={chatInput}
-                  onChange={(e) => setChatInput(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
-                  placeholder="输入消息..."
-                  className="flex-1 h-9 bg-[#1a1a2e] border-[#d4a853]/20 text-white text-sm"
-                />
-                <Button size="sm" onClick={sendChat} className="h-9 px-3 bg-[#d4a853]/20 hover:bg-[#d4a853]/30">
-                  <Send className="w-4 h-4 text-[#d4a853]" />
-                </Button>
-              </div>
+              <AIChatPanel
+                messages={aiMessages}
+                onSend={sendChat}
+                loading={aiChatLoading}
+                onClear={() => setAiMessages([])}
+              />
             </div>
           )}
 
